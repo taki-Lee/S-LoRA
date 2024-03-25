@@ -80,7 +80,7 @@ class LoraLayerWeight:
                                             dtype=self.data_type_, device="cuda").transpose(0, 1).contiguous() * 2 - 1) * 1e-3).to("cpu")
             self.o_lora_B = None
 
-            num_head = self.network_config["num_attention_heads"]
+            num_head = self.network_config["num_attention_heads"] // self.world_size_
             self.w_combined_home = torch.concat(
                 [self.q_lora_A_home.T.reshape(rank, num_head, -1),
                  self.k_lora_A_home.T.reshape(rank, num_head, -1),
@@ -211,7 +211,7 @@ class LoraLayerWeight:
             self.o_lora_B = None
         
         rank = self.lora_config["r"]
-        num_head = self.network_config["num_attention_heads"]
+        num_head = self.network_config["num_attention_heads"]  // self.world_size_
         self.w_combined_home = torch.concat(
             [self.q_lora_A_home.T.reshape(rank, num_head, -1),
                 self.k_lora_A_home.T.reshape(rank, num_head, -1),

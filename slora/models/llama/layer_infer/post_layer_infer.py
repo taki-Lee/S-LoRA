@@ -8,6 +8,7 @@ from einops import rearrange
 from slora.models.llama.infer_struct import LlamaInferStateInfo
 from slora.models.llama.triton_kernel.rmsnorm import rmsnorm_forward
 from slora.common.basemodel import PostLayerInferTpl
+from slora.utils.infer_utils import nvtx_decorator
 
 class LlamaPostLayerInfer(PostLayerInferTpl):
     """
@@ -20,12 +21,15 @@ class LlamaPostLayerInfer(PostLayerInferTpl):
         self.embed_dim_ = network_config["n_embed"]
         return
     
+    @nvtx_decorator("PostLayerInfer _norm", 'darkorange')
     def _norm(self, input, infer_state, layer_weight:LlamaPreAndPostLayerWeight) -> torch.Tensor:
         return rmsnorm_forward(input, layer_weight.final_norm_weight_, eps=self.eps_)
 
+    @nvtx_decorator("PostLayerInfer soft_max", 'darkorange')
     def soft_max(self, data):
         return torch.softmax(data.permute(1, 0).float(), dim=-1)
 
+    @nvtx_decorator("PostLayerInfer token_forward", 'darkorange')
     def token_forward(self, input_embdings, infer_state: LlamaInferStateInfo, layer_weight: LlamaPreAndPostLayerWeight, return_logics=False):
         batch_size = infer_state.batch_size
         last_input = torch.empty((batch_size, self.embed_dim_), device=input_embdings.device, dtype=torch.float16)

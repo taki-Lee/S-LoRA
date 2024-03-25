@@ -24,6 +24,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch-num-adapters", type=int, default=None)
     parser.add_argument("--enable-abort", action="store_true")
     parser.add_argument("--vllm-mem-ratio", type=float, default=0.95)
+    parser.add_argument("--tp", type=int, default=1) # 使用几张卡
     args = parser.parse_args()
 
     base_model = BASE_MODEL[args.model_setting]
@@ -46,6 +47,7 @@ if __name__ == "__main__":
         cmd = f"python -m slora.server.api_server --max_total_token_num {args.num_token}"
         cmd += f" --model {base_model}"
         cmd += f" --tokenizer_mode auto"
+        cmd += f" --tp {args.tp}"
 
         num_iter = args.num_adapter // len(adapter_dirs) + 1
         for i in range(num_iter):

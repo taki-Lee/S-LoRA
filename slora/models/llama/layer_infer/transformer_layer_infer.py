@@ -16,6 +16,7 @@ from slora.models.llama.triton_kernel.rotary_emb import rotary_emb_fwd
 from slora.models.llama.infer_struct import LlamaInferStateInfo
 from slora.common.basemodel.triton_kernel.destindex_copy_kv import destindex_copy_kv, destindex_copy_quantize_kv
 from slora.common.basemodel import TransformerLayerInferTpl
+from slora.utils.infer_utils import nvtx_decorator
 
 class LlamaTransformerLayerInfer(TransformerLayerInferTpl):
     """
@@ -32,13 +33,15 @@ class LlamaTransformerLayerInfer(TransformerLayerInferTpl):
         self.embed_dim_ = network_config["hidden_size"]
         return
 
-    
+    @nvtx_decorator("_att_norm", 'orange')
     def _att_norm(self, input, infer_state:LlamaInferStateInfo, layer_weight:LlamaTransformerLayerWeight)->torch.Tensor:
         return rmsnorm_forward(input, weight=layer_weight.att_norm_weight_, eps=self.eps_)
     
+    @nvtx_decorator("_ffn_norm", 'orange')
     def _ffn_norm(self, input, infer_state:LlamaInferStateInfo, layer_weight:LlamaTransformerLayerWeight)->torch.Tensor:
         return rmsnorm_forward(input, weight=layer_weight.ffn_norm_weight_, eps=self.eps_)
 
+    @nvtx_decorator("_get_qkv", 'orange')
     def _get_qkv(self, input, cache_k, cache_v, infer_state:LlamaInferStateInfo, layer_weight:LlamaTransformerLayerWeight)->torch.Tensor:
         q = torch.mm(input.view(-1, self.embed_dim_), layer_weight.q_weight_)
         rotary_emb_fwd(q.view(-1, self.tp_q_head_num_, self.head_dim_), infer_state.position_cos, infer_state.position_sin)
@@ -49,6 +52,7 @@ class LlamaTransformerLayerInfer(TransformerLayerInferTpl):
                     out=cache_v.view(-1, self.tp_v_head_num_ * self.head_dim_))
         return q
     
+    # @nvtx_decorator("_post_cache_kv", 'orange')
     def _post_cache_kv(self, cache_k, cache_v, infer_state:LlamaInferStateInfo, layer_weight:LlamaTransformerLayerWeight):
         mem_manager = infer_state.mem_manager
         if infer_state.is_prefill:
@@ -60,6 +64,7 @@ class LlamaTransformerLayerInfer(TransformerLayerInferTpl):
                 return
         return
     
+    @nvtx_decorator("_context_attention_kernel", 'orange')
     def _context_attention_kernel(self, q, k, v, infer_state:LlamaInferStateInfo, layer_weight)->torch.Tensor:
         o_tensor = torch.empty_like(q)
         context_attention_fwd(q.view(-1, self.tp_q_head_num_, self.head_dim_),
@@ -71,13 +76,16 @@ class LlamaTransformerLayerInfer(TransformerLayerInferTpl):
                               infer_state.max_len_in_batch)
         return o_tensor
     
+    @nvtx_decorator("_token_attention_kernel", 'orange')
     def _token_attention_kernel(self, q, infer_state:LlamaInferStateInfo, layer_weight)->torch.Tensor:
         return self._token_decode_attention_mode(q, infer_state)
 
+    @nvtx_decorator("_get_o", 'orange')
     def _get_o(self, input, infer_state:LlamaInferStateInfo, layer_weight:LlamaTransformerLayerWeight)->torch.Tensor:
         o_tensor = torch.mm(input.view(-1, self.tp_o_head_num_ * self.head_dim_), layer_weight.o_weight_)
         return o_tensor
 
+    @nvtx_decorator("_ffn", 'orange')
     def _ffn(self, input, infer_state:LlamaInferStateInfo, layer_weight:LlamaTransformerLayerWeight)->torch.Tensor:
         gate_out = torch.mm(input.view(-1, self.embed_dim_), layer_weight.gate_proj)
         torch.nn.functional.silu(gate_out, inplace=True)
@@ -89,6 +97,7 @@ class LlamaTransformerLayerInfer(TransformerLayerInferTpl):
         ffn1_out = None
         return ffn2_out
     
+    @nvtx_decorator("_copy_kv_to_mem_cache", 'orange')
     def _copy_kv_to_mem_cache(self, key_buffer, value_buffer, mem_index, mem_manager):
         if "int8kv" in self.mode:
             destindex_copy_quantize_kv(key_buffer,
@@ -103,6 +112,7 @@ class LlamaTransformerLayerInfer(TransformerLayerInferTpl):
             destindex_copy_kv(key_buffer, mem_index, mem_manager.key_buffer[self.layer_num_])
             destindex_copy_kv(value_buffer, mem_index, mem_manager.value_buffer[self.layer_num_])
     
+    @nvtx_decorator("_token_decode_attention_normal", 'orange')
     def _token_decode_attention_normal(self, q, infer_state: LlamaInferStateInfo):
         total_token_num = infer_state.total_token_num
         batch_size = infer_state.batch_size
@@ -148,6 +158,7 @@ class LlamaTransformerLayerInfer(TransformerLayerInferTpl):
         else:
             raise Exception("not support triton version")
 
+    @nvtx_decorator("_token_decode_attention_int8kv", 'orange')
     def _token_decode_attention_int8kv(self, q, infer_state: LlamaInferStateInfo):
         total_token_num = infer_state.total_token_num
         batch_size = infer_state.batch_size

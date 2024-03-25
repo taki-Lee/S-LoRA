@@ -2,9 +2,10 @@ import torch
 
 import triton
 import triton.language as tl
-
+from slora.utils.infer_utils import nvtx_decorator
 
 @triton.jit
+@nvtx_decorator('_rms_norm_fwd_fused')
 def _rms_norm_fwd_fused(
     X,  # pointer to the input
     Y,  # pointer to the output
@@ -37,7 +38,7 @@ def _rms_norm_fwd_fused(
         # Write output
         tl.store(Y + cols, y.to(tl.float16), mask=mask)
 
-
+@nvtx_decorator('rmsnorm_forward')
 def rmsnorm_forward(x, weight, eps):
     # allocate output
     y = torch.empty_like(x)
@@ -62,6 +63,7 @@ def rmsnorm_forward(x, weight, eps):
     return y
 
 
+@nvtx_decorator('torch_rms_norm')
 def torch_rms_norm(x, weight, eps):
     return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + eps) * weight
 

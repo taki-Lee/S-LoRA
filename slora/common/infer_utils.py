@@ -1,3 +1,5 @@
+from slora.utils.infer_utils import nvtx_decorator
+@nvtx_decorator("init_bloc")
 def init_bloc(b_loc, b_seq_len, max_len_in_batch, alloc_mem_index):
     start_index = 0
     b_seq_len_numpy = b_seq_len.cpu().numpy()

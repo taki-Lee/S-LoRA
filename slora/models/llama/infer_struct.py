@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 from slora.common.basemodel import InferStateInfo
+from slora.utils.infer_utils import nvtx_decorator
 
 class LlamaInferStateInfo(InferStateInfo):
     def __init__(self):
@@ -9,6 +10,7 @@ class LlamaInferStateInfo(InferStateInfo):
         self.position_sin = None
         self.other_kv_index = None
     
+    @nvtx_decorator('init_some_extra_state')
     def init_some_extra_state(self, 
             model, 
             batch_size, 

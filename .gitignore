@@ -7,3 +7,10 @@ dist
 *.swp
 *.so
 .DS_Store
+*.json
+*.log
+*.sh
+*.nsys-rep
+*.model
+LLM-models
+*.png

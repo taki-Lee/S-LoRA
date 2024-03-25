@@ -2,8 +2,9 @@ import argparse
 import os
 
 # base_model = "dummy-llama-7b"
-base_model = "huggyllama/llama-7b"
-adapter_dirs = ["tloen/alpaca-lora-7b", "MBZUAI/bactrian-x-llama-7b-lora"]
+base_model = "/workspace/S-LoRA/LLM-models/LLaMA-2-7b/Llama-2-7b-hf"
+adapter_dirs = ["/workspace/S-LoRA/LLM-models/LLaMA-2-7b/Adapters/tloen/alpaca-lora-7b", 
+                "/workspace/S-LoRA/LLM-models/LLaMA-2-7b/Adapters/MBZUAI/bactrian-x-llama-7b-lora"]
 
 
 if __name__ == "__main__":

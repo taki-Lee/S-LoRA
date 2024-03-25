@@ -9,6 +9,7 @@ from slora.common.mem_allocator import MemoryAllocator
 from slora.common.infer_utils import init_bloc
 from slora.common.build_utils import repair_config
 from slora.utils.model_load import hf_load_config
+from slora.utils.infer_utils import nvtx_decorator
 
 from slora.mprophet.model_config import get_config_json
 
@@ -137,6 +138,7 @@ class TpPartBaseModel:
             return self._decode(batch_size, total_token_num, max_len_in_batch, input_ids, b_loc, b_start_loc, b_seq_len)
 
     
+    @nvtx_decorator('base model _prefill', 'orange')
     def _prefill(self, batch_size, total_token_num, max_len_in_batch, input_ids, b_loc, b_start_loc, b_seq_len):
         infer_state = self.infer_state_class()
         infer_state.is_prefill = True
@@ -159,6 +161,7 @@ class TpPartBaseModel:
         predict_logics = self._context_forward(input_ids, infer_state)
         return predict_logics
     
+    @nvtx_decorator('base model _decode', 'orange')
     def _decode(self, batch_size, total_token_num, max_len_in_batch, input_ids, b_loc, b_start_loc, b_seq_len):
         infer_state = self.infer_state_class()
         infer_state.is_prefill = False
@@ -192,6 +195,7 @@ class TpPartBaseModel:
         return predict_logics
     
     @final
+    @nvtx_decorator("_context_forward", "orange")
     def _context_forward(self, input_ids, infer_state: InferStateInfo):
         cuda_input_ids = input_ids
         input_embs = self.pre_infer.context_forward(cuda_input_ids, infer_state, self.pre_post_weight)
@@ -201,6 +205,7 @@ class TpPartBaseModel:
         return predict_logics
 
     @final
+    @nvtx_decorator("_token_forward", "orange")
     def _token_forward(self, input_ids, infer_state: InferStateInfo):
         cuda_input_ids = input_ids
         input_embs = self.pre_infer.token_forward(cuda_input_ids, infer_state, self.pre_post_weight)

@@ -3,9 +3,11 @@ import torch
 import triton
 import triton.language as tl
 import math
+from slora.utils.infer_utils import nvtx_decorator
 
 
 @triton.jit
+@nvtx_decorator('_fwd_kernel_token_att1')
 def _fwd_kernel_token_att1(
     Q, K, sm_scale, B_Loc, B_Start_Loc, B_Seqlen, max_input_len,
     Att_Out,
@@ -49,6 +51,7 @@ def _fwd_kernel_token_att1(
 
 
 @torch.no_grad()
+@nvtx_decorator('token_att_fwd')
 def token_att_fwd(q, k, att_out, B_Loc, B_Start_Loc, B_Seqlen, max_input_len):
     BLOCK = 32
     # shape constraints
@@ -79,6 +82,7 @@ def token_att_fwd(q, k, att_out, B_Loc, B_Start_Loc, B_Seqlen, max_input_len):
 
 
 @triton.jit
+@nvtx_decorator('_fwd_kernel_token_att1_int8')
 def _fwd_kernel_token_att1_int8(
     Q, K, K_scale, sm_scale, B_Loc, B_Start_Loc, B_Seqlen, max_input_len,
     Att_Out,
@@ -124,6 +128,7 @@ def _fwd_kernel_token_att1_int8(
 
 
 @torch.no_grad()
+@nvtx_decorator('token_att_fwd_int8k')
 def token_att_fwd_int8k(q, k, k_scale, att_out, B_Loc, B_Start_Loc, B_Seqlen, max_input_len):
     BLOCK = 32
     # shape constraints
@@ -155,6 +160,7 @@ def token_att_fwd_int8k(q, k, k_scale, att_out, B_Loc, B_Start_Loc, B_Seqlen, ma
     return
 
 
+@nvtx_decorator('torch_att')
 def torch_att(xq, xk, bs, seqlen, num_head, head_dim):
     xq = xq.view(bs, 1, num_head, head_dim)
     xk = xk.view(bs, seqlen, num_head, head_dim)
@@ -166,6 +172,7 @@ def torch_att(xq, xk, bs, seqlen, num_head, head_dim):
     return scores
 
 
+@nvtx_decorator('torch_att1')
 def torch_att1(xq, xk, seqlen, num_head, head_dim):
     xq = xq.view(1, num_head, head_dim)
     xk = xk.view(seqlen, num_head, head_dim)

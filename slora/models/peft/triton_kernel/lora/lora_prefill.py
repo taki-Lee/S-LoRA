@@ -18,6 +18,7 @@ if triton.__version__ >= "2.1.0":
         BLOCK_N: tl.constexpr, BLOCK_RANK: tl.constexpr,
         TILE_N: tl.constexpr
     ):
+        # merge LoRA result after 'Out'.
         cur_batch = tl.program_id(0)
         cur_tile = tl.program_id(1)
         start_m = tl.program_id(2)

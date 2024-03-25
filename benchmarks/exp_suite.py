@@ -6,7 +6,10 @@ BASE_MODEL = {
         "S2": "huggyllama/llama-7b",
         "S3": "huggyllama/llama-13b",
         "S4": "huggyllama/llama-13b",
-        "Real": "huggyllama/llama-7b",
+        # "Real": "huggyllama/llama-7b",
+        "Real": "/workspace/S-LoRA/LLM-models/LLaMA-2-7b/Llama-2-7b-hf",
+        "debug": "/workspace/S-LoRA/LLM-models/LLaMA-2-7b/Llama-2-7b-hf",
+        "debug-13b": "/workspace/S-LoRA/LLM-models/LLaMA-2-13b/Llama-2-13b-chat-hf",
 }
 
 LORA_DIR = {
@@ -16,7 +19,13 @@ LORA_DIR = {
         "S3": ["dummy-lora-13b-rank-16"],
         "S4": ["dummy-lora-13b-rank-64",
                "dummy-lora-13b-rank-32", "dummy-lora-13b-rank-16",],
-        "Real": ["tloen/alpaca-lora-7b", "MBZUAI/bactrian-x-llama-7b-lora"],
+        # "Real": ["tloen/alpaca-lora-7b", "MBZUAI/bactrian-x-llama-7b-lora"],
+        "Real": ["/workspace/S-LoRA/LLM-models/LLaMA-2-7b/Adapters/tloen/alpaca-lora-7b", 
+                "/workspace/S-LoRA/LLM-models/LLaMA-2-7b/Adapters/MBZUAI/bactrian-x-llama-7b-lora"],
+        "debug": ["/workspace/S-LoRA/LLM-models/LLaMA-2-7b/Adapters/tloen/alpaca-lora-7b", 
+                "/workspace/S-LoRA/LLM-models/LLaMA-2-7b/Adapters/MBZUAI/bactrian-x-llama-7b-lora"],
+        "debug-13b": ["/workspace/S-LoRA/LLM-models/LLaMA-2-13b/Adapters/ausboss/llama2-13b-supercot-loras2", 
+                "/workspace/S-LoRA/LLM-models/LLaMA-2-13b/Adapters/IlyaGusev/llama_13b_ru_turbo_alpaca_lora"],
 }
 
 BenchmarkConfig = namedtuple(
@@ -264,6 +273,76 @@ debug_suite = {
         req_rate = [2],
         cv = [1],
         duration = [60],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+    ),
+
+    "my-suite": BenchmarkConfig(
+        num_adapters = [20],
+        alpha = [1],
+        req_rate = [20],
+        cv = [1],
+        duration = [20],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+    ),
+
+    "rate-1": BenchmarkConfig(
+        num_adapters = [20],
+        alpha = [1],
+        req_rate = [1],
+        cv = [1],
+        duration = [20],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+    ),
+
+    "rate-2": BenchmarkConfig(
+        num_adapters = [20],
+        alpha = [1],
+        req_rate = [2],
+        cv = [1],
+        duration = [20],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+    ),
+
+    "rate-3": BenchmarkConfig(
+        num_adapters = [20],
+        alpha = [1],
+        req_rate = [3],
+        cv = [1],
+        duration = [20],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+    ),
+
+    "rate-4": BenchmarkConfig(
+        num_adapters = [20],
+        alpha = [1],
+        req_rate = [4],
+        cv = [1],
+        duration = [20],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+    ),
+
+    "rate-5": BenchmarkConfig(
+        num_adapters = [20],
+        alpha = [1],
+        req_rate = [5],
+        cv = [1],
+        duration = [20],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+    ),
+
+    "rate-6": BenchmarkConfig(
+        num_adapters = [20],
+        alpha = [1],
+        req_rate = [6],
+        cv = [1],
+        duration = [20],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
     ),

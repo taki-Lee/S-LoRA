@@ -1,6 +1,6 @@
 import gc
 import torch
-
+from slora.utils.infer_utils import nvtx_decorator
 
 # TODO: will it slow down the program?
 def suffix_cumsum(tensor, dim=-1, dtype=torch.int32):
@@ -26,7 +26,7 @@ class MemoryAllocator:
         dsize = 2 if self.dtype == torch.float16 else None
         return 2 * self.layer_num * self.tot_size * self.cell_size * dsize
   
-
+    @nvtx_decorator('MemoryAllocator alloc')
     def alloc(self, need_size):
         if need_size > self.can_use_mem_size:
             raise Exception(f'warn no enough pool space: need_size {need_size} left_size {self.can_use_mem_size}')
@@ -220,6 +220,7 @@ class MemoryAllocator:
 
 
     def reset_all_pool(self):
+        # print("total size : ", self.tot_size) # 10000
         self.mem_state = torch.ones((self.tot_size,), dtype=torch.bool, device="cuda")
         self._mem_cum_sum = torch.empty((self.tot_size,), dtype=torch.int32, device="cuda")
         self.indexes = torch.arange(0, self.tot_size, dtype=torch.long, device="cuda")

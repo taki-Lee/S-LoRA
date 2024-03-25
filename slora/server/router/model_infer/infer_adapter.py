@@ -6,6 +6,7 @@ import time
 
 from slora.common.mem_allocator import MemoryAllocator
 from slora.utils.infer_utils import calculate_time, mark_start, mark_end
+from slora.utils.infer_utils import nvtx_decorator
 
 
 @dataclass
@@ -45,17 +46,17 @@ class InferAdapter:
         h = adapter.network_config["hidden_size"]
         head_num = adapter.network_config["num_attention_heads"]
         head_dim = h // head_num
-
+        print("head_num: %d  head_dim: %d"%(head_num, head_dim)) # [32, 128]
         for i in range(adapter.network_config["num_hidden_layers"]):
             adapter.layers[i].load_to_gpu(prefetch=prefetch)
             #self.mem_manager.key_buffer[i][loc[:r]] = adapter.layers[i].q_lora_A.transpose(0, 1).reshape(r, head_num, head_dim)
             #self.mem_manager.key_buffer[i][loc[r:r * 2]] = adapter.layers[i].k_lora_A.transpose(0, 1).reshape(r, head_num, head_dim)
             #self.mem_manager.key_buffer[i][loc[r * 2:r * 3]] = adapter.layers[i].v_lora_A.transpose(0, 1).reshape(r, head_num, head_dim)
             #self.mem_manager.key_buffer[i][loc[r * 3:r * 4]] = adapter.layers[i].o_lora_A.transpose(0, 1).reshape(r, head_num, head_dim)
-
+            
             w_combined = adapter.layers[i].w_combined
             self.mem_manager.key_buffer[i][loc] = w_combined[0]
-
+            
             #self.mem_manager.key_buffer[i][loc[:r]] = w_combined[0].T.reshape(r, head_num, head_dim)
             #self.mem_manager.key_buffer[i][loc[r:r * 2]] = w_combined[1].T.reshape(r, head_num, head_dim)
             #self.mem_manager.key_buffer[i][loc[r * 2:r * 3]] = w_combined[2].T.reshape(r, head_num, head_dim)
@@ -89,6 +90,7 @@ class InferAdapter:
             adapter.layers[i].offload_from_gpu()
 
     # @calculate_time(show=True, min_cost_ms=0)
+    @nvtx_decorator("load_adapters")
     def load_adapters(self, adapters, prefetch=False):
         # func_name = "realload" if not prefetch else "prefetch"
         # mark_start(func_name)
@@ -111,7 +113,7 @@ class InferAdapter:
                     tot_size += adapter.r * 4
             # mark_end("load scan")
             print(f"prefetch {len(new_adapters)} adapters, "
-                  f"{len(self.adapter_dirs) + len(new_adapters)} in total")
+                  f"{len(self.adapter_dirs) + len(new_adapters)} in total, total_size {tot_size}")
         else:
             new_adapters = []
             tot_size = 0
@@ -121,7 +123,7 @@ class InferAdapter:
                     new_adapters.append(adapter)
                     tot_size += adapter.r * 4
             # mark_end("load scan")
-            print(f"load {len(new_adapters)} adapters, {len(self.adapter_dirs) + len(new_adapters)} in total")
+            print(f"load {len(new_adapters)} adapters, {len(self.adapter_dirs) + len(new_adapters)} in total, total_size {tot_size}")
 
         new_loc = self.mem_manager.alloc(tot_size)
         # assert len(new_loc) == tot_size

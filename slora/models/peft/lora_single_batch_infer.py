@@ -8,10 +8,12 @@ from slora.models.llama.triton_kernel.context_flashattention_nopad import contex
 from slora.models.llama.triton_kernel.rotary_emb import rotary_emb_fwd
 from slora.utils.infer_utils import mark_cost_time
 from slora.utils.infer_utils import calculate_time, mark_start, mark_end
+from slora.utils.infer_utils import nvtx_decorator
 
 
 class LoraPEFTBatchInfer:
 
+    @nvtx_decorator("PEFT __init__", 'skyblue')
     def __init__(self, base_model, infer_adapter=None):
         self.base_model = base_model
         
@@ -57,6 +59,7 @@ class LoraPEFTBatchInfer:
                         value_buffer[layer_id][loc[r * 3:r * 4]].reshape(emb_dim, r).transpose(0, 1))
     
     @torch.inference_mode()
+    @nvtx_decorator("PEFT merge_adapter", 'skyblue')
     def merge_adapter(self):
         base_model = self.base_model
         for layer_id in range(self.base_model.layers_num):
@@ -75,6 +78,7 @@ class LoraPEFTBatchInfer:
             base_layer_weight.o_weight_.add_(ab[3])
     
     @torch.inference_mode()
+    @nvtx_decorator("PEFT unmerge_adapter", 'skyblue')
     def unmerge_adapter(self):
         base_model = self.base_model
         for layer_id in range(self.base_model.layers_num):

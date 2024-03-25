@@ -3,9 +3,11 @@ import torch
 import triton
 import triton.language as tl
 import torch.nn.functional as F
+from slora.utils.infer_utils import nvtx_decorator
 
 
 @triton.jit
+@nvtx_decorator('_fwd_kernel')
 def _fwd_kernel(
     Logics, V, Out,
     B_Loc, B_Start_Loc, B_Seqlen, max_input_len,
@@ -58,6 +60,7 @@ def _fwd_kernel(
 
 
 @torch.no_grad()
+@nvtx_decorator('token_softmax_reducev_fwd')
 def token_softmax_reducev_fwd(logics, v, o, b_loc, b_start_loc, b_seq_len, max_input_len, other_kv_index):
     BLOCK = 64
     batch, head = b_seq_len.shape[0], logics.shape[0]

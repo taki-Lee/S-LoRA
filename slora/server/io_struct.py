@@ -1,15 +1,19 @@
 from .sampling_params import SamplingParams
 from typing import Dict, List, Optional, Tuple
 import asyncio
+import numpy as np
 
 
 class Req:
-    def __init__(self, adapter_dir, request_id, prompt_ids, sample_params: SamplingParams):
+    def __init__(self, adapter_dir, request_id, prompt_ids, sample_params: SamplingParams, predict_output_len=1000):
         self.adapter_dir = adapter_dir
         self.request_id = request_id
         self.prompt_ids = prompt_ids
         self.input_len = len(prompt_ids)
-        self.max_output_len = sample_params.max_new_tokens
+        # self.max_output_len = sample_params.max_new_tokens
+        self.max_output_len = sample_params.output_len
+        self.max_new_token = sample_params.max_new_tokens
+        self.predict_output_len = predict_output_len
         self.sample_params = sample_params
         self.output_ids = []
         self.output_metadata_list = []
@@ -40,6 +44,8 @@ class Req:
 
     def __repr__(self):
         return (f"request_id(n={self.request_id}, "
+                f"max_output_len={self.max_output_len}, "
+                f"max_new_token={self.max_new_token}, "
                 f"adapter_dir={self.adapter_dir}, "
                 f"prompt_ids={self.prompt_ids}, ")
         
@@ -74,6 +80,8 @@ class Batch:
         for req in reqs:
             self.adapter_dirs.add(req.adapter_dir)
 
+        self.offload_request = False
+
     def input_tokens(self):
         batch_input_tokens = 0
         for req in self.reqs:
@@ -90,7 +98,37 @@ class Batch:
         tokens = 0
         for req in self.reqs:
             tokens += req.input_len + len(req.output_ids)
+            # print("req.max_output_len:", req.max_output_len)
         return tokens
+    
+    def calcu_input_tokens(self):
+        tokens = 0
+        for req in self.reqs:
+            tokens += req.input_len
+        return tokens
+    
+    def calcu_output_tokens(self):
+        tokens = 0
+        for req in self.reqs:
+            tokens += len(req.output_ids)
+        return tokens
+
+    def calcu_max_need_tokens(self):
+        cache_list = []
+        for req in self.reqs:
+            cache_list.append((req.input_len + len(req.output_ids),
+                               req.max_output_len - len(req.output_ids)-1))
+        cache_list.sort(key=lambda x: -x[1])
+
+        has_gen_tokens = [e[0] for e in cache_list]
+        left_tokens = np.array([e[1] for e in cache_list])
+        size_array = np.arange(1, len(cache_list) + 1, 1)
+
+        cum_run_len_array = np.cumsum(has_gen_tokens)
+        
+        max_need_token = (left_tokens * size_array + cum_run_len_array).max()
+
+        return max_need_token
 
     def mark_finished_req(self, eos_id):
         has_new_finish = False
@@ -101,9 +139,19 @@ class Batch:
             if req.output_ids[-1] == eos_id and req.sample_params.ignore_eos == False:
                 req.has_generate_finished = True
                 has_new_finish = True
+                print("req abort eos")
             if len(req.output_ids) >= req.max_output_len or req.aborted:
                 req.has_generate_finished = True
                 has_new_finish = True
+                print("req abort exceed max_output_len")
+            if len(req.output_ids) >= req.max_new_token or req.aborted:
+                req.has_generate_finished = True
+                has_new_finish = True
+                print("req abort exceed max_new_token")
+            if len(req.output_ids) >= req.predict_output_len or req.aborted:
+                req.has_generate_finished = True
+                has_new_finish = True
+                print("req abort exceed pre_dict_output_len")
         return has_new_finish
 
     def filter_finished(self):

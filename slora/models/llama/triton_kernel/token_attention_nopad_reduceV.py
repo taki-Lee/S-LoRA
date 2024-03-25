@@ -2,9 +2,11 @@ import torch
 
 import triton
 import triton.language as tl
+from slora.utils.infer_utils import nvtx_decorator
 
 
 @triton.jit
+@nvtx_decorator('_fwd_kernel_token_att2')
 def _fwd_kernel_token_att2(
     Prob, V, Out, B_Loc, B_Start_Loc, B_Seqlen, max_input_len,  # B_Start_Loc 保存的是如果连续存储时候的累加输入和
     stride_b_loc_b, stride_b_loc_s,
@@ -44,6 +46,7 @@ def _fwd_kernel_token_att2(
 
 
 @torch.no_grad()
+@nvtx_decorator('token_att_fwd2')
 def token_att_fwd2(prob, v, out, B_Loc, B_Start_Loc, B_Seqlen, max_input_len):
     if triton.__version__ >= "2.1.0":
         BLOCK = 128
@@ -69,6 +72,7 @@ def token_att_fwd2(prob, v, out, B_Loc, B_Start_Loc, B_Seqlen, max_input_len):
 
 
 @triton.jit
+@nvtx_decorator('_fwd_kernel_token_att2_int8v')
 def _fwd_kernel_token_att2_int8v(
     Prob, V, V_scale, Out, B_Loc, B_Start_Loc, B_Seqlen, max_input_len,  # B_Start_Loc 保存的是如果连续存储时候的累加输入和
     stride_b_loc_b, stride_b_loc_s,
@@ -111,6 +115,7 @@ def _fwd_kernel_token_att2_int8v(
 
 
 @torch.no_grad()
+@nvtx_decorator('token_att_fwd2_int8v')
 def token_att_fwd2_int8v(prob, v, v_scale, out, B_Loc, B_Start_Loc, B_Seqlen, max_input_len):
     if max_input_len < 512:
         BLOCK = triton.next_power_of_2(max_input_len)
@@ -136,6 +141,7 @@ def token_att_fwd2_int8v(prob, v, v_scale, out, B_Loc, B_Start_Loc, B_Seqlen, ma
     return
 
 
+@nvtx_decorator('torch_att')
 def torch_att(V, P, bs, seqlen, num_head, head_dim):
     V = V.view(bs, seqlen, num_head, head_dim).transpose(1, 2)
     P = P.reshape(num_head, bs, 1, seqlen).transpose(0, 1)

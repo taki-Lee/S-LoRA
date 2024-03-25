@@ -4,9 +4,11 @@ import triton
 import triton.language as tl
 import math
 import torch.nn.functional as F
+from slora.utils.infer_utils import nvtx_decorator
 
 if triton.__version__ >= "2.1.0":
     @triton.jit
+    @nvtx_decorator("_fwd_kernel", 'tomato')
     def _fwd_kernel(
         Q, K, V, sm_scale, B_Start_Loc, B_Seqlen,  # B_LOC 内部记录每个batch 输入的真实位置， B_SEQ_len 记录当前输入的真实长度
         Out,
@@ -90,6 +92,7 @@ if triton.__version__ >= "2.1.0":
         return
 
     @torch.no_grad()
+    @nvtx_decorator("context_attention_fwd", 'tomato')
     def context_attention_fwd(q, k, v, o, b_start_loc, b_seq_len, max_input_len):
         BLOCK = 128
         # shape constraints
@@ -120,6 +123,7 @@ if triton.__version__ >= "2.1.0":
 
 elif triton.__version__ == "2.0.0":
     @triton.jit
+    @nvtx_decorator("_fwd_kernel", 'tomato')
     def _fwd_kernel(
         Q, K, V, sm_scale, B_Start_Loc, B_Seqlen,
         TMP,  # NOTE: TMP is a scratchpad buffer to workaround a compiler bug
@@ -206,6 +210,7 @@ elif triton.__version__ == "2.0.0":
         return
 
     @torch.no_grad()
+    @nvtx_decorator("context_attention_fwd", 'tomato')
     def context_attention_fwd(q, k, v, o, b_start_loc, b_seq_len, max_input_len):
         BLOCK = 128
         # shape constraints
@@ -242,7 +247,7 @@ elif triton.__version__ == "2.0.0":
 else:
     raise Exception("error triton version!")
 
-
+@nvtx_decorator('torch_att tril_transpose_matmul_softmax_matmul', 'tomato')
 def torch_att(xq, xk, xv, bs, seqlen, num_head, head_dim):
     xq = xq.view(bs, seqlen, num_head, head_dim)
     xk = xk.view(bs, seqlen, num_head, head_dim)

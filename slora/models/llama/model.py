@@ -12,6 +12,7 @@ from slora.models.llama.infer_struct import LlamaInferStateInfo
 from slora.common.mem_allocator import MemoryAllocator
 from slora.common.int8kv_mem_manager import INT8KVMemoryManager
 from slora.common.basemodel import TpPartBaseModel
+from slora.utils.infer_utils import nvtx_decorator
 
 
 class LlamaTpPartModel(TpPartBaseModel):
@@ -31,21 +32,25 @@ class LlamaTpPartModel(TpPartBaseModel):
     # memory_manager_class = MemoryManager
     memory_manager_class = MemoryAllocator
 
+    @nvtx_decorator('LlamaTpPartModel __init__')
     def __init__(self, tp_rank, world_size, weight_dir, 
                  max_total_token_num, mem_adapter_size, load_way="HF", mode=[], dummy=False):
         super().__init__(tp_rank, world_size, weight_dir,
                          max_total_token_num, mem_adapter_size, load_way, mode, dummy=dummy)
         return
     
+    @nvtx_decorator('LlamaTpPartModel _init_config')
     def _init_config(self):
         super()._init_config()
         # rename key
         # repair_config()
         return 
     
+    @nvtx_decorator('LlamaTpPartModel _verify_params')
     def _verify_params(self):
         assert self.load_way == "HF", "llama only support HF format to load Now!"
 
+    @nvtx_decorator('LlamaTpPartModel _init_mem_manager')
     def _init_mem_manager(self):
         mem_dict = {
             "int8kv" : INT8KVMemoryManager
@@ -61,6 +66,7 @@ class LlamaTpPartModel(TpPartBaseModel):
                                                      head_dim=self.config["hidden_size"] // self.config["num_attention_heads"],
                                                      layer_num=self.config["num_hidden_layers"])
 
+    @nvtx_decorator('LlamaTpPartModel _init_custom')
     def _init_custom(self):
         """
         模型特殊的一些初始化
@@ -71,6 +77,7 @@ class LlamaTpPartModel(TpPartBaseModel):
             self._init_to_get_rotary()
         return
 
+    @nvtx_decorator('LlamaTpPartModel _init_to_get_rotary')
     def _init_to_get_rotary(self, default_base=10000.0):
         if self.config.get("rope_scaling", {}) is None:
             rope_scaling_factor = 1.0
@@ -107,6 +114,7 @@ class LlamaTpPartModel(TpPartBaseModel):
         self._sin_cached = torch.sin(freqs).to(torch.float16).cuda()
         return
 
+    @nvtx_decorator('LlamaTpPartModel _init_to_get_dynamic_ntk_rotary')
     def _init_to_get_dynamic_ntk_rotary(self):
         max_position_embeddings = self.config.get("max_position_embeddings", 2048)
         base = self.config.get("rope_theta", 10000.0)

@@ -2,6 +2,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 from typing import final
+import nvtx
+import asyncio
 
 from slora.common.infer_utils import init_bloc
 from slora.models.llama.triton_kernel.context_flashattention_nopad import context_attention_fwd
@@ -11,10 +13,12 @@ from slora.server.router.model_infer.naive_infer_adapter import NaiveInferAdapte
 from slora.utils.infer_utils import mark_cost_time
 from slora.utils.infer_utils import calculate_time, mark_start, mark_end
 from slora._kernels import dispatch_bgmv
+from slora.utils.infer_utils import nvtx_decorator, nvtx_decorator_async, use_stream, TORCH_STREAMS, stream_wrapper
 
 
 class LoraUnorderedBatchInfer:
 
+    @nvtx_decorator("PEFT __init__", 'skyblue')
     def __init__(self, base_model, adapters, infer_adapter=None):
         self.base_model = base_model
 
@@ -38,9 +42,11 @@ class LoraUnorderedBatchInfer:
                 self.req_bins[i] = idx
         
         self.kv_embed_dim = base_model.tp_k_head_num_ * base_model.head_dim_
+        self.batch_size = None
 
 
     @torch.no_grad()
+    @nvtx_decorator("PEFT forward", 'skyblue')
     def forward(
             self,
             batch_size, # number of request
@@ -54,7 +60,7 @@ class LoraUnorderedBatchInfer:
             use_bmm=True,
             no_lora_compute=False,
             no_lora_copy=False):
-
+        self.batch_size = batch_size
         # Notice that batch_lora only support decoding
         assert len(b_loc) == len(b_start_loc) == len(b_seq_len)
         self.delta = []
@@ -80,6 +86,7 @@ class LoraUnorderedBatchInfer:
                                 no_lora_compute, no_lora_copy)
 
 
+    @nvtx_decorator("PEFT _prefill", 'skyblue')
     def _prefill(self, batch_size, total_token_num, max_len_in_batch,
                  input_ids,
                  b_loc, b_start_loc, b_seq_len, no_lora_compute=False):
@@ -118,6 +125,7 @@ class LoraUnorderedBatchInfer:
         return predict_logics
 
 
+    @nvtx_decorator("PEFT _decode", 'skyblue')
     def _decode(self, batch_size, total_token_num, max_len_in_batch,
                 input_ids,
                 b_loc, b_start_loc, b_seq_len, no_lora_compute=False, no_lora_copy=False):
@@ -160,6 +168,7 @@ class LoraUnorderedBatchInfer:
 
 
     @final
+    @nvtx_decorator("PEFT _context_forward", 'skyblue')
     def _context_forward(self, input_ids, infer_state, no_lora_compute=False):
         cuda_input_ids = input_ids
         input_embs = self.base_model.pre_infer.context_forward(
@@ -172,6 +181,7 @@ class LoraUnorderedBatchInfer:
 
 
     @final
+    @nvtx_decorator("PEFT _token_forward", 'skyblue')
     def _token_forward(self, input_ids, infer_state, no_lora_compute=False, no_lora_copy=False):
         cuda_input_ids = input_ids
         input_embs = self.base_model.pre_infer.token_forward(
@@ -184,6 +194,7 @@ class LoraUnorderedBatchInfer:
 
 
     @final
+    @nvtx_decorator("PEFT _lora_context_forward", 'skyblue')
     def _lora_context_forward(self, layer_id, input_embs, infer_state, no_lora_compute=False):
         self._lora_context_attention(layer_id, input_embs, infer_state, no_lora_compute)
         layer_weight = self.base_model.trans_layers_weight[layer_id]
@@ -194,6 +205,7 @@ class LoraUnorderedBatchInfer:
 
     @final
     # @calculate_time(show=True, min_cost_ms=0)
+    @nvtx_decorator("PEFT _lora_token_forward", 'skyblue')
     def _lora_token_forward(self, layer_id, input_embs, infer_state, no_lora_compute=False, no_lora_copy=False):
         self._lora_token_attention(layer_id, input_embs, infer_state, no_lora_compute, no_lora_copy)
         layer_weight = self.base_model.trans_layers_weight[layer_id]
@@ -205,6 +217,7 @@ class LoraUnorderedBatchInfer:
 
 
     # @mark_cost_time("trans context flash forward time cost")  # dont to remove this, will make performence down, did not know why
+    @nvtx_decorator("PEFT _lora_context_attention", 'skyblue')
     def _lora_context_attention(self, layer_id, input_embs, infer_state, no_lora_compute=False):
         layer_weight = self.base_model.trans_layers_weight[layer_id]
         layer_infer = self.base_model.layers_infer[layer_id]
@@ -229,6 +242,7 @@ class LoraUnorderedBatchInfer:
 
     # @calculate_time(show=True, min_cost_ms=0)
     # this impl dont to use @mark_cost_time
+    @nvtx_decorator("PEFT _lora_token_attention", 'skyblue')
     def _lora_token_attention(self, layer_id, input_embs, infer_state, no_lora_compute=False, no_lora_copy=False):
         layer_weight = self.base_model.trans_layers_weight[layer_id]
         layer_infer = self.base_model.layers_infer[layer_id]
@@ -251,26 +265,34 @@ class LoraUnorderedBatchInfer:
     
 
     # @calculate_time(show=True, min_cost_ms=0)
+    @nvtx_decorator("PEFT _batch_lora_get_qkv", 'skyblue')
     def _batch_lora_get_qkv(self, layer_id, input_embs, cache_k, cache_v, infer_state, no_lora_compute=False, no_lora_copy=False)->torch.Tensor:
+        if use_stream():
+            loop = asyncio.get_event_loop()
+            q = self._stream_batch_lora_get_qkv(layer_id, input_embs, cache_k, cache_v, infer_state, no_lora_compute, no_lora_copy)
+            return q
         base_model = self.base_model
         base_layer_weight = base_model.trans_layers_weight[layer_id]
         base_layer_infer = base_model.layers_infer[layer_id]
 
         # q (bs, H)
-        q = torch.mm(input_embs.view(-1, base_layer_infer.embed_dim_), base_layer_weight.q_weight_)
+        with nvtx.annotate("torch.mm get_q", color='green'):
+            q = torch.mm(input_embs.view(-1, base_layer_infer.embed_dim_), base_layer_weight.q_weight_)
          # @TODO: fix me, filter requests querying only base model
         assert(len(q)==len(self.req_bins))
 
         if not no_lora_compute:
             # mark_start("get_q")
             delta_qA = self.delta[0]
-            dispatch_bgmv(delta_qA, input_embs.view(-1, base_layer_infer.embed_dim_), 
-                          self.key_buffer[layer_id], 
-                          self.infer_adapter.a_start, self.infer_adapter.a_len, 
-                          self.infer_adapter.a_loc, self.req_bins, 0, self.infer_adapter.a_scaling)
-            dispatch_bgmv(q, delta_qA, self.value_buffer[layer_id], self.infer_adapter.a_start, 
-                          self.infer_adapter.a_len, self.infer_adapter.a_loc, 
-                          self.req_bins, 0, self.infer_adapter.a_scaling)
+            with nvtx.annotate("dispatch_bgmv_Ad_%d_bs_%d" % (len(self.infer_adapter.adapter_dirs), self.batch_size), color='red'):
+                dispatch_bgmv(delta_qA, input_embs.view(-1, base_layer_infer.embed_dim_), 
+                            self.key_buffer[layer_id], 
+                            self.infer_adapter.a_start, self.infer_adapter.a_len, 
+                            self.infer_adapter.a_loc, self.req_bins, 0, self.infer_adapter.a_scaling)
+            with nvtx.annotate("dispatch_bgmv_Ad_%d_bs_%d" % (len(self.infer_adapter.adapter_dirs), self.batch_size), color='red'):
+                dispatch_bgmv(q, delta_qA, self.value_buffer[layer_id], self.infer_adapter.a_start, 
+                            self.infer_adapter.a_len, self.infer_adapter.a_loc, 
+                            self.req_bins, 0, self.infer_adapter.a_scaling)
             # delta_qA = None
             # mark_end("get_q")
 
@@ -278,46 +300,185 @@ class LoraUnorderedBatchInfer:
                           infer_state.position_cos, infer_state.position_sin)
 
         # k (bs, H)
-        torch.mm(input_embs.view(-1, base_layer_infer.embed_dim_), base_layer_weight.k_weight_,
+        with nvtx.annotate("torch.mm get_k", color='green'):
+            torch.mm(input_embs.view(-1, base_layer_infer.embed_dim_), base_layer_weight.k_weight_,
                  out=cache_k.view(-1, base_model.tp_k_head_num_ * base_model.head_dim_))
 
         if not no_lora_compute:
             # mark_start("get_k")
             delta_kA = self.delta[1]
-            dispatch_bgmv(delta_kA, input_embs.view(-1, base_layer_infer.embed_dim_), 
-                          self.key_buffer[layer_id], 
-                          self.infer_adapter.a_start, self.infer_adapter.a_len, 
-                          self.infer_adapter.a_loc, self.req_bins, 1, self.infer_adapter.a_scaling)
-            dispatch_bgmv(cache_k.view(-1, base_model.tp_k_head_num_ * base_model.head_dim_), 
-                          delta_kA, self.value_buffer[layer_id], self.infer_adapter.a_start, 
-                          self.infer_adapter.a_len, self.infer_adapter.a_loc, 
-                          self.req_bins, 1, self.infer_adapter.a_scaling)
+            with nvtx.annotate("dispatch_bgmv_Ad_%d_bs_%d" % (len(self.infer_adapter.adapter_dirs), self.batch_size), color='red'):
+                dispatch_bgmv(delta_kA, input_embs.view(-1, base_layer_infer.embed_dim_), 
+                            self.key_buffer[layer_id], 
+                            self.infer_adapter.a_start, self.infer_adapter.a_len, 
+                            self.infer_adapter.a_loc, self.req_bins, 1, self.infer_adapter.a_scaling)
+            with nvtx.annotate("dispatch_bgmv_Ad_%d_bs_%d" % (len(self.infer_adapter.adapter_dirs), self.batch_size), color='red'):
+                dispatch_bgmv(cache_k.view(-1, base_model.tp_k_head_num_ * base_model.head_dim_), 
+                            delta_kA, self.value_buffer[layer_id], self.infer_adapter.a_start, 
+                            self.infer_adapter.a_len, self.infer_adapter.a_loc, 
+                            self.req_bins, 1, self.infer_adapter.a_scaling)
             # delta_kA = None
             # mark_end("get_k")
 
         rotary_emb_fwd(cache_k, infer_state.position_cos, infer_state.position_sin)
 
         # v (bs, H)
-        torch.mm(input_embs.view(-1, base_layer_infer.embed_dim_), base_layer_weight.v_weight_,
+        with nvtx.annotate("torch.mm get_v", color='green'):
+            torch.mm(input_embs.view(-1, base_layer_infer.embed_dim_), base_layer_weight.v_weight_,
                  out=cache_v.view(-1, base_model.tp_k_head_num_ * base_model.head_dim_))
 
         if not no_lora_compute:
             # mark_start("get_v")
             delta_vA = self.delta[2]
-            dispatch_bgmv(delta_vA, input_embs.view(-1, base_layer_infer.embed_dim_), 
-                          self.key_buffer[layer_id], 
-                          self.infer_adapter.a_start, self.infer_adapter.a_len, 
-                          self.infer_adapter.a_loc, self.req_bins, 2, self.infer_adapter.a_scaling)
-            dispatch_bgmv(cache_v.view(-1, base_model.tp_k_head_num_ * base_model.head_dim_), 
-                          delta_vA, self.value_buffer[layer_id], self.infer_adapter.a_start, 
-                          self.infer_adapter.a_len, self.infer_adapter.a_loc, 
-                          self.req_bins, 2, self.infer_adapter.a_scaling)
+            with nvtx.annotate("dispatch_bgmv_Ad_%d_bs_%d" % (len(self.infer_adapter.adapter_dirs), self.batch_size), color='red'):
+                dispatch_bgmv(delta_vA, input_embs.view(-1, base_layer_infer.embed_dim_), 
+                            self.key_buffer[layer_id], 
+                            self.infer_adapter.a_start, self.infer_adapter.a_len, 
+                            self.infer_adapter.a_loc, self.req_bins, 2, self.infer_adapter.a_scaling)
+            with nvtx.annotate("dispatch_bgmv_Ad_%d_bs_%d" % (len(self.infer_adapter.adapter_dirs), self.batch_size), color='red'):
+                dispatch_bgmv(cache_v.view(-1, base_model.tp_k_head_num_ * base_model.head_dim_), 
+                            delta_vA, self.value_buffer[layer_id], self.infer_adapter.a_start, 
+                            self.infer_adapter.a_len, self.infer_adapter.a_loc, 
+                            self.req_bins, 2, self.infer_adapter.a_scaling)
             # delta_vA = None
             # mark_end("get_v")
 
         return q        
 
+    @nvtx_decorator("PEFT _stream_batch_lora_get_qkv", 'skyblue')
+    def _stream_batch_lora_get_qkv(self, layer_id, input_embs, cache_k, cache_v, infer_state, no_lora_compute=False, no_lora_copy=False)->torch.Tensor:
+        def get_q(self, layer_id, input_embs, infer_state, no_lora_compute=False, no_lora_copy=False):
+            @stream_wrapper(TORCH_STREAMS[0])
+            @nvtx_decorator("torch.mm", 'green')
+            def get_base_q():
+                q = torch.mm(input_embs.view(-1, base_layer_infer.embed_dim_), base_layer_weight.q_weight_)
+                return q
+            
+            @stream_wrapper(TORCH_STREAMS[1])
+            @nvtx_decorator("dispatch_bgmv", 'red')
+            def lora_shrink():
+                dispatch_bgmv(delta_qA, input_embs.view(-1, base_layer_infer.embed_dim_), 
+                                self.key_buffer[layer_id], 
+                                self.infer_adapter.a_start, self.infer_adapter.a_len, 
+                                self.infer_adapter.a_loc, self.req_bins, 0, self.infer_adapter.a_scaling)
+            @stream_wrapper(TORCH_STREAMS[1])
+            @nvtx_decorator("dispatch_bgmv", 'red')
+            def lora_expand():
+                dispatch_bgmv(q, delta_qA, self.value_buffer[layer_id], self.infer_adapter.a_start, 
+                                self.infer_adapter.a_len, self.infer_adapter.a_loc, 
+                                self.req_bins, 0, self.infer_adapter.a_scaling)
+            
+            if not no_lora_compute:
+                delta_qA = self.delta[0]
+                # G = await asyncio.gather(
+                #     asyncio.to_thread(get_base_q),
+                #     asyncio.to_thread(lora_shrink),
+                #     asyncio.to_thread(lora_expand),
+                # )
+                # q = G[0]
+                # q = get_base_q
+                q = get_base_q()
+                lora_shrink()
+                lora_expand()
+            else:
+                q = get_base_q()
 
+            assert(len(q)==len(self.req_bins))
+            rotary_emb_fwd(q.view(-1, base_layer_infer.tp_q_head_num_, base_model.head_dim_),
+                          infer_state.position_cos, infer_state.position_sin)
+            
+            return q
+        
+        def get_k(self, layer_id, input_embs, cache_k, infer_state, no_lora_compute=False, no_lora_copy=False):
+            @stream_wrapper(TORCH_STREAMS[2])
+            @nvtx_decorator("torch.mm", 'green')
+            def get_base_k():
+                torch.mm(input_embs.view(-1, base_layer_infer.embed_dim_), base_layer_weight.k_weight_,
+                    out=cache_k.view(-1, base_model.tp_k_head_num_ * base_model.head_dim_))
+
+            @stream_wrapper(TORCH_STREAMS[3])
+            @nvtx_decorator("dispatch_bgmv", 'red')
+            def lora_shrink():
+                dispatch_bgmv(delta_kA, input_embs.view(-1, base_layer_infer.embed_dim_), 
+                                self.key_buffer[layer_id], 
+                                self.infer_adapter.a_start, self.infer_adapter.a_len, 
+                                self.infer_adapter.a_loc, self.req_bins, 1, self.infer_adapter.a_scaling)
+            @stream_wrapper(TORCH_STREAMS[3])
+            @nvtx_decorator("dispatch_bgmv", 'red')
+            def lora_expand():
+                dispatch_bgmv(cache_k.view(-1, base_model.tp_k_head_num_ * base_model.head_dim_), 
+                                delta_kA, self.value_buffer[layer_id], self.infer_adapter.a_start, 
+                                self.infer_adapter.a_len, self.infer_adapter.a_loc, 
+                                self.req_bins, 1, self.infer_adapter.a_scaling)
+            
+            if not no_lora_compute:
+                delta_kA = self.delta[1]
+                
+                # await asyncio.gather(
+                #     asyncio.to_thread(get_base_k),
+                #     asyncio.to_thread(lora_shrink),
+                #     asyncio.to_thread(lora_expand),
+                # )
+                get_base_k()
+                lora_shrink()
+                lora_expand()
+            else:
+                get_base_k()
+            rotary_emb_fwd(cache_k, infer_state.position_cos, infer_state.position_sin)
+        
+        def get_v(self, layer_id, input_embs, cache_v, no_lora_compute=False, no_lora_copy=False):
+            @stream_wrapper(TORCH_STREAMS[4])
+            @nvtx_decorator("torch.mm", 'green')
+            def get_base_v():
+                torch.mm(input_embs.view(-1, base_layer_infer.embed_dim_), base_layer_weight.v_weight_,
+                    out=cache_v.view(-1, base_model.tp_k_head_num_ * base_model.head_dim_))
+            
+            @stream_wrapper(TORCH_STREAMS[5])
+            @nvtx_decorator("dispatch_bgmv", 'red')
+            def lora_shrink():
+                dispatch_bgmv(delta_vA, input_embs.view(-1, base_layer_infer.embed_dim_), 
+                                self.key_buffer[layer_id], 
+                                self.infer_adapter.a_start, self.infer_adapter.a_len, 
+                                self.infer_adapter.a_loc, self.req_bins, 2, self.infer_adapter.a_scaling)
+            @stream_wrapper(TORCH_STREAMS[5])
+            @nvtx_decorator("dispatch_bgmv", 'red')
+            def lora_expand():
+                dispatch_bgmv(cache_v.view(-1, base_model.tp_k_head_num_ * base_model.head_dim_), 
+                                delta_vA, self.value_buffer[layer_id], self.infer_adapter.a_start, 
+                                self.infer_adapter.a_len, self.infer_adapter.a_loc, 
+                                self.req_bins, 2, self.infer_adapter.a_scaling)
+            
+            get_base_v()
+            if not no_lora_compute:
+                delta_vA = self.delta[1]
+
+                # await asyncio.gather(
+                #     asyncio.to_thread(get_base_v),
+                #     asyncio.to_thread(lora_shrink),
+                #     asyncio.to_thread(lora_expand),
+                # )
+                get_base_v()
+                lora_shrink()
+                lora_expand()
+            else:
+                get_base_v()
+    
+        base_model = self.base_model
+        base_layer_weight = base_model.trans_layers_weight[layer_id]
+        base_layer_infer = base_model.layers_infer[layer_id]
+
+        # q (bs, H)
+        q = get_q(self, layer_id, input_embs, infer_state, no_lora_compute=False, no_lora_copy=False)
+        # k 
+        get_k(self, layer_id, input_embs, cache_k, infer_state, no_lora_compute=False, no_lora_copy=False)
+        # v
+        get_v(self, layer_id, input_embs, cache_v, no_lora_compute=False, no_lora_copy=False)
+         # @TODO: fix me, filter requests querying only base model
+        
+        torch.cuda.synchronize()
+        return q
+    
+    @nvtx_decorator("PEFT _lora_get_qkv", 'skyblue')
     def _lora_get_qkv(self, layer_id, input_embs, cache_k, cache_v, infer_state, no_lora_compute=False)->torch.Tensor:
         base_model = self.base_model
         base_layer_weight = base_model.trans_layers_weight[layer_id]
@@ -346,13 +507,15 @@ class LoraUnorderedBatchInfer:
                                          infer_state.b_seq_len, self.req_bins, self.kv_embed_dim, 
                                          0, self.max_lora_dim, self.max_b_seq_len)
             else:
-                dispatch_bgmv(delta_qA, input_embs.view(-1, base_layer_infer.embed_dim_), 
-                            self.key_buffer[layer_id],
-                            self.infer_adapter.a_start, self.infer_adapter.a_len, 
-                            self.infer_adapter.a_loc, self.batch_req_bins, 0, self.infer_adapter.a_scaling)
-                dispatch_bgmv(q, delta_qA, self.value_buffer[layer_id], self.infer_adapter.a_start, 
-                            self.infer_adapter.a_len, self.infer_adapter.a_loc, 
-                            self.batch_req_bins, 0, self.infer_adapter.a_scaling)
+                with nvtx.annotate("dispatch_bgmv_Ad_%d_bs_%d" % (len(self.infer_adapter.adapter_dirs), self.batch_size), color='red'):
+                    dispatch_bgmv(delta_qA, input_embs.view(-1, base_layer_infer.embed_dim_), 
+                                self.key_buffer[layer_id],
+                                self.infer_adapter.a_start, self.infer_adapter.a_len, 
+                                self.infer_adapter.a_loc, self.batch_req_bins, 0, self.infer_adapter.a_scaling)
+                with nvtx.annotate("dispatch_bgmv_Ad_%d_bs_%d" % (len(self.infer_adapter.adapter_dirs), self.batch_size), color='red'):
+                    dispatch_bgmv(q, delta_qA, self.value_buffer[layer_id], self.infer_adapter.a_start, 
+                                self.infer_adapter.a_len, self.infer_adapter.a_loc, 
+                                self.batch_req_bins, 0, self.infer_adapter.a_scaling)
             # delta_qA = None
 
         rotary_emb_fwd(q.view(-1, base_layer_infer.tp_q_head_num_, base_model.head_dim_),
@@ -379,14 +542,16 @@ class LoraUnorderedBatchInfer:
                                          infer_state.b_seq_len, self.req_bins, self.kv_embed_dim, 
                                          1, self.max_lora_dim, self.max_b_seq_len)
             else:
-                dispatch_bgmv(delta_kA, input_embs.view(-1, base_layer_infer.embed_dim_), 
-                            self.key_buffer[layer_id], 
-                            self.infer_adapter.a_start, self.infer_adapter.a_len, 
-                            self.infer_adapter.a_loc, self.batch_req_bins, 1, self.infer_adapter.a_scaling)
-                dispatch_bgmv(cache_k.view(-1, base_model.tp_k_head_num_ * base_model.head_dim_), 
-                            delta_kA, self.value_buffer[layer_id], self.infer_adapter.a_start, 
-                            self.infer_adapter.a_len, self.infer_adapter.a_loc, 
-                            self.batch_req_bins, 1, self.infer_adapter.a_scaling)
+                with nvtx.annotate("dispatch_bgmv_Ad_%d_bs_%d" % (len(self.infer_adapter.adapter_dirs), self.batch_size), color='red'):
+                    dispatch_bgmv(delta_kA, input_embs.view(-1, base_layer_infer.embed_dim_), 
+                                self.key_buffer[layer_id], 
+                                self.infer_adapter.a_start, self.infer_adapter.a_len, 
+                                self.infer_adapter.a_loc, self.batch_req_bins, 1, self.infer_adapter.a_scaling)
+                with nvtx.annotate("dispatch_bgmv_Ad_%d_bs_%d" % (len(self.infer_adapter.adapter_dirs), self.batch_size), color='red'):
+                    dispatch_bgmv(cache_k.view(-1, base_model.tp_k_head_num_ * base_model.head_dim_), 
+                                delta_kA, self.value_buffer[layer_id], self.infer_adapter.a_start, 
+                                self.infer_adapter.a_len, self.infer_adapter.a_loc, 
+                                self.batch_req_bins, 1, self.infer_adapter.a_scaling)
             # delta_kA = None
 
         rotary_emb_fwd(cache_k, infer_state.position_cos, infer_state.position_sin)
@@ -412,48 +577,55 @@ class LoraUnorderedBatchInfer:
                                          infer_state.b_seq_len, self.req_bins, self.kv_embed_dim, 
                                          2, self.max_lora_dim, self.max_b_seq_len)
             else:
-                dispatch_bgmv(delta_vA, input_embs.view(-1, base_layer_infer.embed_dim_), 
-                            self.key_buffer[layer_id], 
-                            self.infer_adapter.a_start, self.infer_adapter.a_len, 
-                            self.infer_adapter.a_loc, self.batch_req_bins, 2, self.infer_adapter.a_scaling)
-                dispatch_bgmv(cache_v.view(-1, base_model.tp_k_head_num_ * base_model.head_dim_), 
-                            delta_vA, self.value_buffer[layer_id], self.infer_adapter.a_start, 
-                            self.infer_adapter.a_len, self.infer_adapter.a_loc, 
-                            self.batch_req_bins, 2, self.infer_adapter.a_scaling)
+                with nvtx.annotate("dispatch_bgmv_Ad_%d_bs_%d" % (len(self.infer_adapter.adapter_dirs), self.batch_size), color='red'):
+                    dispatch_bgmv(delta_vA, input_embs.view(-1, base_layer_infer.embed_dim_), 
+                                self.key_buffer[layer_id], 
+                                self.infer_adapter.a_start, self.infer_adapter.a_len, 
+                                self.infer_adapter.a_loc, self.batch_req_bins, 2, self.infer_adapter.a_scaling)
+                with nvtx.annotate("dispatch_bgmv_Ad_%d_bs_%d" % (len(self.infer_adapter.adapter_dirs), self.batch_size), color='red'):
+                    dispatch_bgmv(cache_v.view(-1, base_model.tp_k_head_num_ * base_model.head_dim_), 
+                                delta_vA, self.value_buffer[layer_id], self.infer_adapter.a_start, 
+                                self.infer_adapter.a_len, self.infer_adapter.a_loc, 
+                                self.batch_req_bins, 2, self.infer_adapter.a_scaling)
             # delta_vA = None
         return q
     
 
     # @calculate_time(show=True, min_cost_ms=0)
+    @nvtx_decorator("PEFT _batch_lora_get_o", 'skyblue')
     def _batch_lora_get_o(self, layer_id, input, infer_state, no_lora_compute=False)->torch.Tensor:
         base_model = self.base_model
         base_layer_weight = base_model.trans_layers_weight[layer_id]
         base_layer_infer = base_model.layers_infer[layer_id]
-        
-        o = torch.mm(input.view(-1, base_layer_infer.embed_dim_),
+        with nvtx.annotate("torch.mm get_o", color='green'):
+            o = torch.mm(input.view(-1, base_layer_infer.embed_dim_),
                           base_layer_weight.o_weight_)
         
         if not no_lora_compute:
             # mark_start("get_o")
             delta_oA = self.delta[0]
-            dispatch_bgmv(delta_oA, input.view(-1, base_layer_infer.embed_dim_), 
-                          self.key_buffer[layer_id], 
-                          self.infer_adapter.a_start, self.infer_adapter.a_len, 
-                          self.infer_adapter.a_loc, self.req_bins, 3, self.infer_adapter.a_scaling)
-            dispatch_bgmv(o, delta_oA, self.value_buffer[layer_id], self.infer_adapter.a_start, 
-                          self.infer_adapter.a_len, self.infer_adapter.a_loc, 
-                          self.req_bins, 3, self.infer_adapter.a_scaling)
+            with nvtx.annotate("dispatch_bgmv_Ad_%d_bs_%d" % (len(self.infer_adapter.adapter_dirs), self.batch_size), color='red'):
+                dispatch_bgmv(delta_oA, input.view(-1, base_layer_infer.embed_dim_), 
+                            self.key_buffer[layer_id], 
+                            self.infer_adapter.a_start, self.infer_adapter.a_len, 
+                            self.infer_adapter.a_loc, self.req_bins, 3, self.infer_adapter.a_scaling)
+            with nvtx.annotate("dispatch_bgmv_Ad_%d_bs_%d" % (len(self.infer_adapter.adapter_dirs), self.batch_size), color='red'):
+                dispatch_bgmv(o, delta_oA, self.value_buffer[layer_id], self.infer_adapter.a_start, 
+                            self.infer_adapter.a_len, self.infer_adapter.a_loc, 
+                            self.req_bins, 3, self.infer_adapter.a_scaling)
             # delta_oA = None
             # mark_end("get_o")
         return o
 
 
+    @nvtx_decorator("PEFT _lora_get_o", 'skyblue')
     def _lora_get_o(self, layer_id, input, infer_state, no_lora_compute=False)->torch.Tensor:
         base_model = self.base_model
         base_layer_weight = base_model.trans_layers_weight[layer_id]
         base_layer_infer = base_model.layers_infer[layer_id]
 
-        o = torch.mm(input.view(-1, base_layer_infer.embed_dim_),
+        with nvtx.annotate("torch.mm get_o", color='green'):
+            o = torch.mm(input.view(-1, base_layer_infer.embed_dim_),
                           base_layer_weight.o_weight_)
         if not no_lora_compute:
             delta_oA = self.delta[0]
@@ -472,13 +644,15 @@ class LoraUnorderedBatchInfer:
                                          infer_state.b_seq_len, self.req_bins, base_layer_infer.embed_dim_, 
                                          3, self.max_lora_dim, self.max_b_seq_len)
             else:
-                dispatch_bgmv(delta_oA, input.view(-1, base_layer_infer.embed_dim_), 
-                            self.key_buffer[layer_id], 
-                            self.infer_adapter.a_start, self.infer_adapter.a_len, 
-                            self.infer_adapter.a_loc, self.batch_req_bins, 3, self.infer_adapter.a_scaling)
-                dispatch_bgmv(o, delta_oA, self.value_buffer[layer_id], self.infer_adapter.a_start, 
-                            self.infer_adapter.a_len, self.infer_adapter.a_loc, 
-                            self.batch_req_bins, 3, self.infer_adapter.a_scaling)
+                with nvtx.annotate("dispatch_bgmv_Ad_%d_bs_%d" % (len(self.infer_adapter.adapter_dirs), self.batch_size), color='red'):
+                    dispatch_bgmv(delta_oA, input.view(-1, base_layer_infer.embed_dim_), 
+                                self.key_buffer[layer_id], 
+                                self.infer_adapter.a_start, self.infer_adapter.a_len, 
+                                self.infer_adapter.a_loc, self.batch_req_bins, 3, self.infer_adapter.a_scaling)
+                with nvtx.annotate("dispatch_bgmv_Ad_%d_bs_%d" % (len(self.infer_adapter.adapter_dirs), self.batch_size), color='red'):
+                    dispatch_bgmv(o, delta_oA, self.value_buffer[layer_id], self.infer_adapter.a_start, 
+                                self.infer_adapter.a_len, self.infer_adapter.a_loc, 
+                                self.batch_req_bins, 3, self.infer_adapter.a_scaling)
             # delta_oA = None
         return o
 

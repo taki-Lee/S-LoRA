@@ -21,3 +21,5 @@ def hf_load_config(weights_dir, mode="adapter"):
     config_name = "adapter_config.json" if mode == "adapter" else "config.json"
     with open(os.path.join(weights_dir, config_name), "r") as f:
         return json.load(f), weights_dir
+    
+    print("success load Adapter ", weights_dir)

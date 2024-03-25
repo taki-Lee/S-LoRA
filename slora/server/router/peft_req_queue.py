@@ -3,7 +3,7 @@ import asyncio
 import numpy as np
 from typing import List
 from ..io_struct import Batch, Req
-from slora.utils.infer_utils import  calculate_time
+from slora.utils.infer_utils import  calculate_time, nvtx_decorator
 from slora.server.router.req_queue import ReqQueue
 
 
@@ -35,7 +35,7 @@ class PEFTReqQueue(ReqQueue):
     # @calculate_time(show=True, min_cost_ms=0.1)
     def _can_add_new_req(self, req, lora_ranks):
         self.cache_len_list.append((req.input_len + 1, req.max_output_len - 1)) # hard to analysis
-        self.cache_len_list.sort(key=lambda x: -x[1])
+        self.cache_len_list.sort(key=lambda x: -x[1]) # sort by max_output_len from large to small
         if req.adapter_dir not in self.adapters:
             self.adapter_size += lora_ranks[req.adapter_dir] * 4
             self.adapters.add(req.adapter_dir)
@@ -53,9 +53,11 @@ class PEFTReqQueue(ReqQueue):
         else:
             return False
 
+    @nvtx_decorator("PEFTReqQueue generate_new_batch")
     def generate_new_batch(self, current_batch:Batch, lora_ranks: dict[str, int]):
         if current_batch is not None and len(current_batch.reqs) >= self.running_max_req_size:
             return None
+        print('self.batch_max_tokens:', self.batch_max_tokens)
         
         self._init_cache_list(current_batch, lora_ranks)
         can_run_list = []

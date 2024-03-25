@@ -16,6 +16,7 @@ class SamplingParams:
         top_k: int = -1,  # -1 is for all 
         ignore_eos: bool = False,
         max_new_tokens: int = 16,
+        output_len: int = 16,
         stop_sequences: Optional[Union[str, List[str]]] = None  # 停止句子条件
     ) -> None:
         self.do_sample = do_sample
@@ -26,6 +27,7 @@ class SamplingParams:
         self.top_k = top_k
         self.ignore_eos = ignore_eos
         self.max_new_tokens = max_new_tokens
+        self.output_len = output_len
         self.stop_sequences = stop_sequences
         if self.do_sample == False:
             self.temperature = 1.0

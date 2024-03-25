@@ -2,9 +2,11 @@ import torch
 
 import triton
 import triton.language as tl
+from slora.utils.infer_utils import nvtx_decorator
 
 
 @triton.jit
+@nvtx_decorator('_rotary_kernel')
 def _rotary_kernel(
     Q, Cos, Sin,
     stride_qbs, stride_qh, stride_qd,
@@ -46,6 +48,7 @@ def _rotary_kernel(
 
 
 @torch.no_grad()
+@nvtx_decorator('rotary_emb_fwd')
 def rotary_emb_fwd(q, cos, sin):
     total_len = q.shape[0]
     head_num = q.shape[1]
@@ -74,6 +77,7 @@ def rotary_emb_fwd(q, cos, sin):
     return
 
 
+@nvtx_decorator('torch_rotary_emb')
 def torch_rotary_emb(x, cos, sin):
     seq_len, h, dim = x.shape
     x0 = x[:, :, 0: dim // 2]

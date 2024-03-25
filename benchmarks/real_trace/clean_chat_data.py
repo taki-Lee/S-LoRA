@@ -61,7 +61,7 @@ def clean_chat_data(log_files, action_type):
             row = json.loads(l)
             if row["type"] == action_type:
                 raw_data.append(row)
-
+    print("len raw_data", len(raw_data))
     all_models = set()
     all_ips = dict()
     chats = []
@@ -139,6 +139,7 @@ def clean_chat_data(log_files, action_type):
         all_models.update([model])
 
     chats.sort(key=lambda x: x["tstamp"])
+    print(len(chats))
     last_updated_tstamp = chats[-1]["tstamp"]
     last_updated_datetime = datetime.datetime.fromtimestamp(
         last_updated_tstamp, tz=timezone("US/Pacific")
@@ -168,7 +169,7 @@ def clean_chat_data(log_files, action_type):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--action-type", type=str, default="chat")
-    parser.add_argument("--max-num-files", type=int)
+    parser.add_argument("--max-num-files", type=int, default=2)
     args = parser.parse_args()
 
     log_files = get_log_files(args.max_num_files)

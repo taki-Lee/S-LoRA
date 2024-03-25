@@ -19,7 +19,7 @@ from typing import List, Tuple
 import aiohttp
 
 from exp_suite import BenchmarkConfig, get_all_suites, to_dict, BASE_MODEL, LORA_DIR
-from trace import generate_requests, get_real_requests
+from trace import generate_requests, get_real_requests, Request
 sys.path.append("../bench_lora")
 from slora.utils.metric import reward, attainment_func
 
@@ -34,6 +34,23 @@ def get_peak_mem(server):
     response = requests.post(url)
     return response.json()["peak_mem"]
 
+def save_requests(requests: List[Request], path):
+    req_dict = {}
+    for req in requests:
+        req_dict[req.req_id] = req.to_json()
+    
+    with open(path, 'w') as f:
+        json.dump(req_dict, f)
+
+def load_requests(path):
+    print('loading requests from ', path)
+    with open(path, 'r') as f:
+        req_dict = json.load(f)
+    
+    requests = []
+    for k, v in req_dict.items():
+        requests.append(Request(**v))
+    return requests
 
 async def send_request(
     backend: str,
@@ -44,6 +61,7 @@ async def send_request(
     prompt: str,
     prompt_len: int,
     output_len: int,
+    max_new_len: int,
     debug: bool,
 ) -> None:
     request_start_time = time.time()
@@ -57,14 +75,26 @@ async def send_request(
         url = server + "/generate_stream"
     
     if backend in ["slora"]:
+        # data = {
+        #     'model_dir': model_dir,
+        #     'lora_dir': adapter_dir,
+        #     'inputs': prompt,
+        #     'parameters': {
+        #         'do_sample': False,
+        #         'ignore_eos': True,
+        #         'max_new_tokens': output_len,
+        #          # 'temperature': 0.1,
+        #     }
+        # }
         data = {
             'model_dir': model_dir,
             'lora_dir': adapter_dir,
             'inputs': prompt,
             'parameters': {
                 'do_sample': False,
-                'ignore_eos': True,
-                'max_new_tokens': output_len,
+                'ignore_eos': False,
+                'output_len': output_len,
+                'max_new_tokens': max_new_len,
                  # 'temperature': 0.1,
             }
         }
@@ -131,7 +161,7 @@ async def benchmark(
                   f"{req.adapter_dir}")
         task = asyncio.create_task(send_request(backend, server,
                                                 req.req_id, req.model_dir, req.adapter_dir, req.prompt,
-                                                req.prompt_len, req.output_len, debug))
+                                                req.prompt_len, req.output_len, req.max_new_token, debug))
         tasks.append(task)
     latency = await asyncio.gather(*tasks)
     return latency
@@ -217,7 +247,7 @@ def get_res_stats(per_req_latency, benchmark_time, backend, warmup_time=0, warmu
     return res
 
 
-def run_exp(model_setting, backend, server, config, output, mode, seed=42, debug=False):
+def run_exp(model_setting, backend, server, config, output, mode, seed=42, debug=False, suite='default'):
     if mode == "real":
         print("*** num_adapters, cv and alpha are not used in real mode ***")
     print([(k, v) for k, v in zip(BenchmarkConfig._fields, config)])
@@ -232,9 +262,15 @@ def run_exp(model_setting, backend, server, config, output, mode, seed=42, debug
         if num_adapters == 0:
             adapter_dirs = [(base_model, None)]
             num_adapters = 1
-        requests = generate_requests(num_adapters, alpha, req_rate, cv, duration,
-                                 input_range, output_range, adapter_dirs,
-                                 seed=seed)
+        save_path = f'./rand_datas/requests-{suite}.json'
+        is_generate = not os.path.exists(save_path)
+        if is_generate:
+            requests = generate_requests(num_adapters, alpha, req_rate, cv, duration,
+                                    input_range, output_range, adapter_dirs,
+                                    seed=seed)
+            save_requests(requests, save_path)
+        else:
+            requests = load_requests(save_path)
         avg_prompt_len = np.mean([req.prompt_len for req in requests])
         avg_output_len = np.mean([req.output_len for req in requests])
         avg_len = np.mean([req.prompt_len + req.output_len for req in requests])
@@ -243,12 +279,23 @@ def run_exp(model_setting, backend, server, config, output, mode, seed=42, debug
         # first generate your data using real_trace/clean_chat_data.py
         base_model = BASE_MODEL[model_setting]
         adapter_dirs = LORA_DIR[model_setting]
-        adapter_dirs, requests = get_real_requests(trace_file="../../../real_trace/clean_chat_conv_20231019.json",
+        # trace_file_path = "../../../real_trace/clean_chat_conv_20231019.json"
+        trace_file_path = "/workspace/S-LoRA/benchmarks/real_trace/my_traces.json"
+        adapter_dirs, requests = get_real_requests(trace_file=trace_file_path,
                                                    req_rate=req_rate, duration=duration,
                                                    base_model=base_model, adapter_dirs=adapter_dirs,
                                                    input_range=input_range, output_range=output_range,
-                                                   seed=seed)
+                                                   seed=seed, max_new_token=256)
         # print(requests)
+        save_path = f'./rand_datas/real-requests-{suite}.json'
+        is_generate = not os.path.exists(save_path)
+        if is_generate:
+            requests = generate_requests(num_adapters, alpha, req_rate, cv, duration,
+                                    input_range, output_range, adapter_dirs,
+                                    seed=seed)
+            save_requests(requests, save_path)
+        else:
+            requests = load_requests(save_path)
         avg_prompt_len = np.mean([req.prompt_len for req in requests])
         avg_output_len = np.mean([req.output_len for req in requests])
         avg_len = np.mean([req.prompt_len + req.output_len for req in requests])
@@ -270,6 +317,7 @@ def run_exp(model_setting, backend, server, config, output, mode, seed=42, debug
     benchmark_time = benchmark_end_time - benchmark_start_time
 
     warmup_time = 10
+    # warmup_time=1
     warmup_num = int(req_rate * warmup_time)
     res = get_res_stats(per_req_latency, benchmark_time, backend,
                         warmup_time=warmup_time, warmup_num=warmup_num)
@@ -298,8 +346,10 @@ if __name__ == "__main__":
     parser.add_argument("--server", type=str, default="http://localhost:8000")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output", type=str, default=None)
+    parser.add_argument("--set-max-new-token", action="store_true")
     args = parser.parse_args()
 
+    args.seed = int(time.time())
     assert not args.no_lora_copy or args.no_lora_compute
     assert not (args.debug and args.breakdown)
 
@@ -330,4 +380,4 @@ if __name__ == "__main__":
     for config in tqdm(suites, desc="suites"):
         if to_dict(config) not in results:
             stats = run_exp(args.model_setting, args.backend, args.server, config,
-                            args.output, args.mode, args.seed, args.debug)
+                            args.output, args.mode, args.seed, args.debug, args.suite)

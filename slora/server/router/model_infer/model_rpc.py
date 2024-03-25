@@ -5,6 +5,7 @@ import torch
 import traceback
 import time
 from collections import defaultdict
+import nvtx
 
 from datetime import timedelta
 from tqdm import tqdm
@@ -26,6 +27,7 @@ from slora.server.router.model_infer.naive_infer_adapter import NaiveInferAdapte
 from slora.utils.infer_utils import set_random_seed
 from slora.utils.infer_utils import calculate_time, mark_start, mark_end
 from slora.utils.model_utils import get_model_config
+from slora.utils.infer_utils import nvtx_decorator, nvtx_decorator_async
 from .post_process import sample
 
 
@@ -59,6 +61,7 @@ class ModelRpcServer(rpyc.Service):
             self.model_type = model_cfg["model_type"]
             if self.model_type == "llama":
                 if "num_key_value_heads" in model_cfg.keys():
+                    print("use Llama2TpPartModel")
                     self.model = Llama2TpPartModel(rank_id, world_size, weight_dir,
                                                     max_total_token_num,
                                                     mem_adapter_size=input_params.pool_size_lora,
@@ -107,6 +110,7 @@ class ModelRpcServer(rpyc.Service):
 
 
     @torch.no_grad()
+    @nvtx_decorator("exposed_load_adapters")
     def exposed_load_adapters(self, adapter_dirs, prefetch=False):
         if not self.input_params.bmm:
             adapters = []
@@ -127,6 +131,7 @@ class ModelRpcServer(rpyc.Service):
 
 
     @torch.no_grad()
+    @nvtx_decorator("exposed_offload_adapters")
     def exposed_offload_adapters(self, reserve_dirs=None, prefetch=False):
         if not self.input_params.bmm:
             self.infer_adapter.offload_adapters(reserve_dirs if reserve_dirs is not None else [])
@@ -138,6 +143,7 @@ class ModelRpcServer(rpyc.Service):
 
 
     # @calculate_time(show=True, min_cost_ms=0.1)
+    @nvtx_decorator("exposed_add_batch")
     def exposed_add_batch(self, batch_id, reqs, dtype):
         if self.world_size != 1:
             batch_id, reqs, dtype = obtain(batch_id), obtain(reqs), obtain(dtype)
@@ -152,15 +158,18 @@ class ModelRpcServer(rpyc.Service):
     
     # @calculate_time(show=True, min_cost_ms=300)
     # @calculate_time(show=True, min_cost_ms=0)
+    @nvtx_decorator('exposed_prefill_batch')
     def exposed_prefill_batch(self, batch_id):
         return self.forward(batch_id, is_prefill=True)
 
     # @calculate_time(show=True, min_cost_ms=200)
     # @calculate_time(show=True, min_cost_ms=0)
+    @nvtx_decorator("exposed_decode_batch")
     def exposed_decode_batch(self, batch_id):
         return self.forward(batch_id, is_prefill=False)
 
     # @calculate_time(show=True, min_cost_ms=0.1)
+    @nvtx_decorator("exposed_filter_batch")
     def exposed_filter_batch(self, batch_id, req_id_list):
         if self.world_size != 1:
             batch_id, req_id_list = obtain(batch_id), obtain(req_id_list)
@@ -172,6 +181,7 @@ class ModelRpcServer(rpyc.Service):
         return
 
     # @calculate_time(show=True, min_cost_ms=0.1)
+    @nvtx_decorator("exposed_merge_batch")
     def exposed_merge_batch(self, batch_id1, batch_id2):
         batch1 = self.cache.pop(batch_id1)
         batch2 = self.cache.pop(batch_id2)
@@ -182,6 +192,7 @@ class ModelRpcServer(rpyc.Service):
         return
 
     # @calculate_time(show=True, min_cost_ms=10)
+    @nvtx_decorator("exposed_remove_batch")
     def exposed_remove_batch(self, batch_id):
         batch = self.cache.pop(batch_id)
         batch.free_self()
@@ -189,6 +200,7 @@ class ModelRpcServer(rpyc.Service):
         # torch.cuda.empty_cache()
         return
     
+    @nvtx_decorator("forward", 'red')
     def forward(self, batch_id, is_prefill):
         batch: InferBatch = self.cache.pop(batch_id)
         # print(batch.requests)
@@ -208,31 +220,32 @@ class ModelRpcServer(rpyc.Service):
 
         assert len(batch.adapter_dirs) == len(batch), "batch.adapter_dirs != batch"
 
+        with nvtx.annotate("prepare"):
         # always use lora batch infer
-        if self.input_params.no_kernel or self.input_params.scheduler == "peft" or set(batch.adapter_dirs) == {None}:
-            engine = self.model
-        else:
-            adapters = [self.adapters[self.adapter_id[adapter_dir]] for adapter_dir in batch.adapter_dirs]
-            if self.input_params.no_lora_compute:
-                engine = LoraUnorderedBatchInfer(self.model, adapters)
-            elif self.input_params.bmm:
-                torch.cuda.empty_cache()
-                compressed_dirs = [batch.adapter_dirs[0]]
-                adapter_sep = [0]
-                cnt = 1
-                for i in range(1, len(batch.adapter_dirs)):
-                    if batch.adapter_dirs[i] == batch.adapter_dirs[i-1]:
-                        cnt += 1
-                    else:
-                        compressed_dirs.append(batch.adapter_dirs[i])
-                        adapter_sep.append(adapter_sep[-1] + cnt)
-                        cnt = 1
-                adapters = [self.adapters[self.adapter_id[adapter_dir]] for adapter_dir in compressed_dirs]
-                engine = LoraBmmInfer(self.model, adapters, adapter_sep)
+            if self.input_params.no_kernel or self.input_params.scheduler == "peft" or set(batch.adapter_dirs) == {None}:
+                engine = self.model
             else:
-                engine = LoraUnorderedBatchInfer(self.model, adapters, infer_adapter=self.infer_adapter)
-            kwargs["no_lora_compute"] = self.input_params.no_lora_compute
-            # kwargs["no_lora_copy"] = self.input_params.no_lora_copy 
+                adapters = [self.adapters[self.adapter_id[adapter_dir]] for adapter_dir in batch.adapter_dirs]
+                if self.input_params.no_lora_compute:
+                    engine = LoraUnorderedBatchInfer(self.model, adapters)
+                elif self.input_params.bmm:
+                    torch.cuda.empty_cache()
+                    compressed_dirs = [batch.adapter_dirs[0]]
+                    adapter_sep = [0]
+                    cnt = 1
+                    for i in range(1, len(batch.adapter_dirs)):
+                        if batch.adapter_dirs[i] == batch.adapter_dirs[i-1]:
+                            cnt += 1
+                        else:
+                            compressed_dirs.append(batch.adapter_dirs[i])
+                            adapter_sep.append(adapter_sep[-1] + cnt)
+                            cnt = 1
+                    adapters = [self.adapters[self.adapter_id[adapter_dir]] for adapter_dir in compressed_dirs]
+                    engine = LoraBmmInfer(self.model, adapters, adapter_sep)
+                else:
+                    engine = LoraUnorderedBatchInfer(self.model, adapters, infer_adapter=self.infer_adapter)
+                kwargs["no_lora_compute"] = self.input_params.no_lora_compute
+                # kwargs["no_lora_copy"] = self.input_params.no_lora_copy 
 
         logits = engine.forward(**kwargs)
         next_token_ids, next_token_probs = sample(logits, batch)
@@ -266,6 +279,7 @@ class ModelRpcServer(rpyc.Service):
         engine = LoraUnorderedBatchInfer(self.model, [adapter]*batch_size, infer_adapter=self.infer_adapter)
         self._profile_prefill(batch_size, max_input_len, adapter_engine=engine, rank_size=adapter.r)
     
+    @nvtx_decorator("_profile_prefill", 'red')
     def _profile_prefill(self, batch_size, max_input_len, adapter_engine=None, rank_size=None):
         # warm up
         input_len = max_input_len
@@ -336,6 +350,7 @@ class ModelRpcServer(rpyc.Service):
         
         return
     
+    @nvtx_decorator("exposed_profile_prefill")
     def exposed_profile_prefill(self):
         max_bs = self.model.mem_manager.tot_size // 2048
         print(max_bs)
@@ -359,6 +374,7 @@ class ModelRpcServer(rpyc.Service):
                 self.infer_adapter.offload_adapters([])
         return self.base_prefill, self.adapter_prefill
 
+    @nvtx_decorator("exposed_unmerge_adapter")
     def exposed_unmerge_adapter(self):
         print("len adapters:", len(self.infer_adapter.adapter_dirs))
         assert len(self.infer_adapter.adapter_dirs) == 1
@@ -366,6 +382,7 @@ class ModelRpcServer(rpyc.Service):
         engine = LoraPEFTBatchInfer(self.model, infer_adapter=self.infer_adapter)
         engine.unmerge_adapter()
 
+    @nvtx_decorator("exposed_merge_adapter")
     def exposed_merge_adapter(self):
         print("len adapters:", len(self.infer_adapter.adapter_dirs))
         assert len(self.infer_adapter.adapter_dirs) == 1
@@ -390,10 +407,14 @@ class ModelRpcClient:
                     return ans.value
                 return _func
             self._init_model = async_wrap(self.model.init_model)
-            self._load_adapters = rpyc.async_(self.model.load_adapters)
-            self._offload_adapters = rpyc.async_(self.model.offload_adapters)
-            self._unmerge_adapter = rpyc.async_(self.model.unmerge_adapter)
-            self._merge_adapter = rpyc.async_(self.model.merge_adapter)
+            # self._load_adapters = rpyc.async_(self.model.load_adapters)
+            # self._offload_adapters = rpyc.async_(self.model.offload_adapters)
+            # self._unmerge_adapter = rpyc.async_(self.model.unmerge_adapter)
+            # self._merge_adapter = rpyc.async_(self.model.merge_adapter)
+            self._load_adapters = async_wrap(self.model.load_adapters)
+            self._offload_adapters = async_wrap(self.model.offload_adapters)
+            self._unmerge_adapter = async_wrap(self.model.unmerge_adapter)
+            self._merge_adapter = async_wrap(self.model.merge_adapter)
             self._add_batch = async_wrap(self.model.add_batch)
             self._prefill_batch = async_wrap(self.model.prefill_batch)
             self._decode_batch = async_wrap(self.model.decode_batch)
@@ -430,17 +451,41 @@ class ModelRpcClient:
 
 
     async def load_adapters(self, reqs, prefetch=False):
-        self._load_adapters(reqs, prefetch=prefetch)
+        ans = self._load_adapters(reqs, prefetch=prefetch)
+        if self.use_rpc:
+            await ans
+            return
+        else:
+            return
+        # self._load_adapters(reqs, prefetch=prefetch)
 
 
     async def offload_adapters(self, reserved_reqs=None, prefetch=False):
-        self._offload_adapters(reserved_reqs, prefetch=prefetch)
+        ans = self._offload_adapters(reserved_reqs, prefetch=prefetch)
+        if self.use_rpc:
+            await ans
+            return
+        else:
+            return
+        # self._offload_adapters(reserved_reqs, prefetch=prefetch)
     
     async def unmerge_adapter(self):
-        self._unmerge_adapter()
+        ans = self._unmerge_adapter()
+        if self.use_rpc:
+            await ans
+            return
+        else:
+            return
+        # self._unmerge_adapter()
     
     async def merge_adapter(self):
-        self._merge_adapter()
+        ans = self._merge_adapter()
+        if self.use_rpc:
+            await ans
+            return
+        else:
+            return
+        # self._merge_adapter()
 
 
     async def init_batch(self, batch_id, reqs):
@@ -499,7 +544,8 @@ class ModelRpcClient:
 
 def _init_env(port):
     from rpyc.utils.server import ThreadedServer
-    t = ThreadedServer(ModelRpcServer(), port=port, protocol_config={"allow_pickle": True})
+    t = ThreadedServer(ModelRpcServer(), port=port, protocol_config={"allow_pickle": True,
+                                                                     'allow_public_attrs':True,})
     t.start()
     return
 
@@ -516,7 +562,8 @@ async def start_model_process(port, world_size):
     repeat_count = 0
     while repeat_count < 20:
         try:
-            con = rpyc.connect("localhost", port, config={"allow_pickle": True})
+            con = rpyc.connect("localhost", port, config={"allow_pickle": True,
+                                                          'allow_public_attrs':True, })
             break
         except BaseException:
             await asyncio.sleep(1)

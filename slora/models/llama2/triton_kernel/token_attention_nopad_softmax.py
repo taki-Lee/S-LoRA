@@ -2,9 +2,11 @@ import torch
 
 import triton
 import triton.language as tl
+from slora.utils.infer_utils import nvtx_decorator
 
 
 @triton.jit
+@nvtx_decorator('_fwd_kernel_token_softmax', 'tomato')
 def _fwd_kernel_token_softmax(
     Logics, B_Start_Loc, B_Seqlen,
     Prob_Out,
@@ -33,6 +35,7 @@ def _fwd_kernel_token_softmax(
 
 
 @torch.no_grad()
+@nvtx_decorator('token_softmax_fwd', 'tomato')
 def token_softmax_fwd(Logics, B_Start_Loc, B_Seqlen, Prob_Out, max_input_len):
     BLOCK_SIZE = triton.next_power_of_2(max_input_len)
     batch, head_num = B_Start_Loc.shape[0], Logics.shape[0]

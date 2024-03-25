@@ -12,6 +12,7 @@ def sample(logits, batch:InferBatch):
     logits.div_(temperatures.view((-1, 1)))
     probs = torch.softmax(logits, dim=-1)
     probs_sort, probs_idx = _top_p_top_k(probs, top_ps, top_ks)
+    # print(probs_sort)
     sampled_index = torch.multinomial(probs_sort, num_samples=1, replacement=True)
     
     batch_next_token_ids = torch.gather(probs_idx, dim=1, index=sampled_index)

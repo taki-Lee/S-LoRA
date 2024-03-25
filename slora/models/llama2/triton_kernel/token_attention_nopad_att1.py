@@ -3,9 +3,11 @@ import torch
 import triton
 import triton.language as tl
 import math
+from slora.utils.infer_utils import nvtx_decorator
 
 
 @triton.jit
+@nvtx_decorator("_fwd_kernel_token_att1", 'orange')
 def _fwd_kernel_token_att1(
     Q, K, sm_scale, B_Loc, B_Start_Loc, B_Seqlen, max_input_len,
     Att_Out,
@@ -51,6 +53,7 @@ def _fwd_kernel_token_att1(
 
 
 @torch.no_grad()
+@nvtx_decorator("token_att_fwd", 'orange')
 def token_att_fwd(q, k, att_out, B_Loc, B_Start_Loc, B_Seqlen, max_input_len):
     BLOCK = 32
     # shape constraints

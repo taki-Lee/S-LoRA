@@ -21,6 +21,7 @@ import time
 import torch
 import uvloop
 import sys
+import os
 
 from .build_prompt import build_prompt
 
@@ -327,7 +328,7 @@ def main():
     parser.add_argument("--max_total_token_num", type=int, default=6000,
                         help="the total token nums the gpu and model can support, equals = max_batch * (input_len + output_len)")
     parser.add_argument("--batch_max_tokens", type=int, default=None,
-                        help="max tokens num for new cat batch, it control prefill batch size to Preventing OOM")
+                        help="max tokens num for new cat batch, it control prefill batch size to Preventing OOM") # new cat batch max_token_size
     parser.add_argument("--eos_id", type=int, default=2,
                         help="eos stop token id")
     parser.add_argument("--running_max_req_size", type=int, default=1000,
@@ -373,6 +374,9 @@ def main():
 
     args = parser.parse_args()
 
+    os.system('rm -rf ./profiler-traces/result_prefill')
+    os.system('rm -rf ./profiler-traces/result_decode')
+
     assert args.max_req_input_len < args.max_req_total_len
     setting["max_req_total_len"] = args.max_req_total_len
     setting["nccl_port"] = args.nccl_port
@@ -385,7 +389,12 @@ def main():
         assert (
             args.batch_max_tokens >= args.max_req_total_len
         ), "batch_max_tokens must >= max_req_total_len"
-
+    # args.batch_max_tokens = 1000
+    # args.scheduler = "PEFT"
+    print("====batch_max_tokens : max_total_token_num -- %d : %d" % (args.batch_max_tokens, args.max_total_token_num))
+    
+    args.pool_size_lora = 0
+    print('args.pool_size_lora: ', args.pool_size_lora)
     can_use_ports = alloc_can_use_network_port(
         num=3 + args.tp, used_nccl_port=args.nccl_port
     )
@@ -393,6 +402,7 @@ def main():
     model_rpc_ports = can_use_ports[3:]
 
     global httpserver_manager
+    print("creating HttpServerManager")
     httpserver_manager = HttpServerManager(
         args.model_dir,
         args.tokenizer_mode,
@@ -406,6 +416,7 @@ def main():
     )
     pipe_router_reader, pipe_router_writer = mp.Pipe(duplex=False)
     pipe_detoken_reader, pipe_detoken_writer = mp.Pipe(duplex=False)
+    print("mp.Process start_router_process")
     proc_router = mp.Process(
         target=start_router_process,
         args=(
@@ -418,8 +429,9 @@ def main():
         ),
     )
     proc_router.start()
+    print("mp.Process start_detokenization_process")
     proc_detoken = mp.Process(
-        target=start_detokenization_process,
+        target=start_detokenization_process, ##########
         args=(
             args,
             detokenization_port,
@@ -431,7 +443,9 @@ def main():
     proc_detoken.start()
 
     # wait load model ready
+    print("wait load model ready, router_init_state")
     router_init_state = pipe_router_reader.recv()
+    print("wait load model ready, detoken_init_state")
     detoken_init_state = pipe_detoken_reader.recv()
 
     if router_init_state != "init ok" or detoken_init_state != "init ok":
@@ -448,7 +462,7 @@ def main():
     assert proc_router.is_alive() and proc_detoken.is_alive()
 
     print_mem_stats(args)
-
+    print("uvicorn.run")
     uvicorn.run(
         app,
         host=args.host,

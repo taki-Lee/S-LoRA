@@ -4,12 +4,14 @@ import numpy as np
 from slora.common.basemodel import TransformerLayerWeight
 
 from slora.models.llama.layer_weights.transformer_layer_weight import LlamaTransformerLayerWeight
+from slora.utils.infer_utils import nvtx_decorator
 
 class Llama2TransformerLayerWeight(LlamaTransformerLayerWeight):
     def __init__(self, layer_num, tp_rank, world_size, data_type, network_config, mode=[]):
         super().__init__(layer_num, tp_rank, world_size, data_type, network_config, mode)
         return
     
+    @nvtx_decorator("_load_qkvo_weights", 'orange')
     def _load_qkvo_weights(self, weights):
         if f"model.layers.{self.layer_num_}.input_layernorm.weight" in weights:
             self.att_norm_weight_ = self._cuda(weights[f"model.layers.{self.layer_num_}.input_layernorm.weight"])

@@ -1,10 +1,12 @@
 import torch
 import torch.distributed as dist
+from contextlib import contextmanager
 
 from slora.models.llama.layer_weights.pre_and_post_layer_weight import LlamaPreAndPostLayerWeight
 from slora.models.llama.infer_struct import LlamaInferStateInfo
 from slora.common.basemodel import PreLayerInferTpl
 from slora.utils.infer_utils import mark_cost_time
+from slora.utils.infer_utils import nvtx_decorator
 
 
 class LlamaPreLayerInfer(PreLayerInferTpl):
@@ -19,6 +21,7 @@ class LlamaPreLayerInfer(PreLayerInferTpl):
         return
 
     @mark_cost_time("pre context forward")
+    @nvtx_decorator("prelayer context_forward", "skyblue")
     def context_forward(self, input_ids, infer_state: LlamaInferStateInfo, layer_weight: LlamaPreAndPostLayerWeight):
         total_token_num = infer_state.total_token_num
         input_ids = input_ids[0:total_token_num]
@@ -32,6 +35,7 @@ class LlamaPreLayerInfer(PreLayerInferTpl):
             dist.all_reduce(input_embdings, op=dist.ReduceOp.SUM, async_op=False)
         return input_embdings
 
+    @nvtx_decorator("token_forward", "skyblue")
     def token_forward(self, input_ids, infer_state: LlamaInferStateInfo, layer_weight: LlamaPreAndPostLayerWeight):
         input_mask = torch.logical_or(self.vob_start_id_ > input_ids, input_ids >= self.vob_end_id_)
         tmp_input_ids = (input_ids - self.vob_start_id_)

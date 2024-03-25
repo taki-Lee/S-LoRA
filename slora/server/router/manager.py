@@ -8,6 +8,7 @@ import torch
 import zmq
 import zmq.asyncio
 from typing import Dict, List, Optional
+import nvtx
 
 from ..sampling_params import SamplingParams
 from ..io_struct import Req, Batch, BatchAbortReq
@@ -25,6 +26,9 @@ from slora.server.router.pets_req_queue import PETSReqQueue
 from slora.server.router.peft_req_queue import PEFTReqQueue
 from slora.server.router.cluster_req_queue import ClusterReqQueue
 from slora.server.router.abort_req_queue import AbortReqQueue
+from slora.server.router.predictor import Predictor, PER_BUCKET_LENGTH
+
+from slora.utils.infer_utils import get_profiler, nvtx_decorator_async, nvtx_decorator, use_predictor
 
 
 class RouterManager:
@@ -52,19 +56,25 @@ class RouterManager:
             self.lora_ranks[lora_dir] = config["r"]
         self.lora_ranks[None] = 0
         
+        print("input_params:\n", input_params)
         if input_params.scheduler == "pets":
+            print("Using PETSReqQueue")
             self.req_queue = PETSReqQueue(input_params.max_total_token_num, input_params.batch_max_tokens,
                                       input_params.running_max_req_size)
         elif input_params.scheduler == "peft":
+            print("Using PEFTReqQueue")
             self.req_queue = PEFTReqQueue(input_params.max_total_token_num, input_params.batch_max_tokens,
                                       input_params.running_max_req_size)
         elif input_params.batch_num_adapters is not None:
+            print("Using ClusterReqQueue")
             self.req_queue = ClusterReqQueue(input_params.max_total_token_num, input_params.batch_max_tokens,
                                     input_params.running_max_req_size, input_params.batch_num_adapters)
         elif input_params.enable_abort:
+            print("Using AbortReqQueue")
             self.req_queue = AbortReqQueue(input_params.max_total_token_num, input_params.batch_max_tokens,
                                       input_params.running_max_req_size)
         else:
+            print("Using ReqQueue")
             self.req_queue = ReqQueue(input_params.max_total_token_num, input_params.batch_max_tokens,
                                     input_params.running_max_req_size)
 
@@ -82,6 +92,9 @@ class RouterManager:
         self.model_rpc_ports = model_rpc_ports
 
         self.stats_tool = Stats(log_stats, log_stats_interval)
+        self.is_offload_request = False
+        # self.predictor = Predictor("/workspace/distill-bert/knowledge-distillation-transformers-pytorch-sagemaker/lslee/distill-bert-mixed-20/checkpoint-2500")
+        self.predictor = Predictor("/workspace/distill-bert/knowledge-distillation-transformers-pytorch-sagemaker/lslee/distill-bert-MUZUBAI-40/checkpoint-2500")
 
 
     async def wait_to_model_ready(self):
@@ -104,7 +117,7 @@ class RouterManager:
                     input_params=self.input_params,
                     prefetch_stream=self.prefetch_stream,
                 ))
-
+        # 并发执行任务
         await asyncio.gather(*init_model_ret)
         return
     
@@ -133,7 +146,11 @@ class RouterManager:
         sampling_params: SamplingParams,
         request_id: str
     ):
-        req = Req(adapter_dir, request_id, prompt_ids, sampling_params)
+        predict_output_len = 1000
+        if use_predictor():
+            predict_output_len = (self.predictor.predict(prompt_ids) + 1) * PER_BUCKET_LENGTH
+        req = Req(adapter_dir, request_id, prompt_ids, sampling_params, predict_output_len)
+        # print("predict_output_len:", req.predict_output_len) # 200 / 300
         self.req_queue.append(req)
         self.send_to_detokenization.send_pyobj(req.to_req_detokenization_state())
         return
@@ -156,8 +173,21 @@ class RouterManager:
             await self._step()
             counter_count += 1
             if self.running_batch is not None:
-                if counter_count % 50 == 0:
-                    print("current batch size:", len(self.running_batch.reqs), "token used ratio:", self.running_batch.calcu_used_tokens() / self.input_params.max_total_token_num)
+                if counter_count % 10 == 0:
+                    print("counter_count: ", counter_count,
+                          "current_batch_size:", len(self.running_batch.reqs), 
+                          "token_used_ratio:", self.running_batch.calcu_used_tokens() / self.input_params.max_total_token_num, 
+                          "total_input_tokens:", self.running_batch.calcu_input_tokens(),
+                          "total_output_tokens:" , self.running_batch.calcu_output_tokens(),
+                          "total_used_tokens:", self.running_batch.calcu_input_tokens() + self.running_batch.calcu_output_tokens(),
+                          "max_need_tokens:", self.running_batch.calcu_max_need_tokens(),
+                        #   "max token num:" , self.input_params.max_total_token_num,
+                        #   "max token used ratio:", self.running_batch.calcu_max_tokens() / self.input_params.max_total_token_num,
+                          "can_use_mem_size:", self.model_rpcs[0].model.model.mem_manager.can_use_mem_size,
+                          "requests in current batch: ", self.running_batch.id_to_reqs.keys(),
+
+                          )
+                    
                     pass
                 self.stats_tool.print_stats()
                 
@@ -194,6 +224,7 @@ class RouterManager:
                     await asyncio.gather(*ret)
             
                 torch.cuda.synchronize()
+                # print("_prefile_batch") # print only at beginning
                 await self._prefill_batch(self.running_batch)
                 await self._filter_runing_batch()
                 self.has_wait_tokens = 0
@@ -217,7 +248,16 @@ class RouterManager:
             self.has_wait_tokens += 1
             return
         else:
-            new_mini_batch = self.req_queue.generate_new_batch(self.running_batch, self.lora_ranks)
+            # schedule requests when reqs arrive/complete
+            if self.req_queue.is_new_req_come == True or self.is_offload_request == True:
+                new_mini_batch = self.req_queue.generate_new_batch(self.running_batch, self.lora_ranks)
+                self.req_queue.is_new_req_come = False
+                self.is_offload_request = False
+            else:
+                new_mini_batch = None
+            
+            # schedule after every decode
+            # new_mini_batch = self.req_queue.generate_new_batch(self.running_batch, self.lora_ranks)
             if self.input_params.enable_abort and len(self.req_queue.abort_req_list) > 0:
                 self.send_to_detokenization.send_pyobj(BatchAbortReq(self.req_queue.abort_req_list))
                 self.req_queue.reset_abort_list()
@@ -228,7 +268,7 @@ class RouterManager:
                 for tp_rank in range(self.world_size):
                     ret.append(self.model_rpcs[tp_rank].load_adapters(new_mini_batch.adapter_dirs))
                 await asyncio.gather(*ret)
-
+                # print("_prefill_batch new_mini_batch") # print when loading Adapters
                 await self._prefill_batch(new_mini_batch, minibatch=True)
                 if not new_mini_batch.is_clear():
                     await self._merge_batch(self.running_batch, new_mini_batch)
@@ -245,7 +285,8 @@ class RouterManager:
         rets = [self.model_rpcs[tp_rank].init_batch(batch.batch_id, reqs) for tp_rank in range(self.world_size)]
         await asyncio.gather(*rets)
         return
-
+    
+    @nvtx_decorator_async("_prefill_batch", "purple")
     async def _prefill_batch(self, batch, minibatch=True):
         await self._init_batch(batch)
         rets = [self.model_rpcs[tp_rank].prefill_batch(batch.batch_id) for tp_rank in range(self.world_size)]
@@ -259,7 +300,8 @@ class RouterManager:
         self._send_to_detokenization_proc(batch, req_to_out_token_id)
         await self._handle_finish_req(batch, has_new_finished_req, minibatch=True)
         return
-
+    
+    @nvtx_decorator_async("_decode_batch", "blue")
     async def _decode_batch(self, batch:Batch):
         rets = [self.model_rpcs[tp_rank].decode_batch(batch.batch_id) for tp_rank in range(self.world_size)]
         ans = await asyncio.gather(*rets)
@@ -272,23 +314,26 @@ class RouterManager:
         self._send_to_detokenization_proc(batch, req_to_out_token_id)
         await self._handle_finish_req(batch, has_new_finished_req)
         return
-
+    @nvtx_decorator_async("_filter_batch", "green")
     async def _filter_batch(self, batch: Batch):
         req_id_list = [r.request_id for r in batch.reqs]
         rets = [self.model_rpcs[tp_rank].filter_batch(batch.batch_id, req_id_list) for tp_rank in range(self.world_size)]
         await asyncio.gather(*rets)
         return
 
+    @nvtx_decorator_async("_merge_batch", "green")
     async def _merge_batch(self, batch1, batch2):
         rets = [self.model_rpcs[tp_rank].merge_batch(batch1.batch_id, batch2.batch_id) for tp_rank in range(self.world_size)]
         await asyncio.gather(*rets)
         return
 
+    @nvtx_decorator_async("_remove_batch", "green")
     async def _remove_batch(self, batch):
         rets = [self.model_rpcs[tp_rank].remove_batch(batch.batch_id) for tp_rank in range(self.world_size)]
         await asyncio.gather(*rets)
         return
 
+    @nvtx_decorator_async("_handle_finish_req", "green")
     async def _handle_finish_req(self, batch: Batch, has_new_finished_req, minibatch=False):
         if has_new_finished_req:
             batch.filter_finished()
@@ -310,8 +355,10 @@ class RouterManager:
                 await self._remove_batch(batch)
             else:
                 await self._filter_batch(batch)
+            self.is_offload_request = True
         return
 
+    @nvtx_decorator_async("_filter_running_batch", "green")
     async def _filter_runing_batch(self):
         if self.running_batch is not None and self.running_batch.is_clear():
             # offload model and adapters

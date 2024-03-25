@@ -11,6 +11,7 @@ from slora.models.llama2.triton_kernel.token_attention_nopad_softmax import toke
 from slora.models.llama2.triton_kernel.token_attention_nopad_reduceV import token_att_fwd2
 from slora.models.llama.infer_struct import LlamaInferStateInfo
 from slora.models.llama.layer_infer.transformer_layer_infer import LlamaTransformerLayerInfer
+from slora.utils.infer_utils import nvtx_decorator
 
 class Llama2TransformerLayerInfer(LlamaTransformerLayerInfer):
 
@@ -24,6 +25,7 @@ class Llama2TransformerLayerInfer(LlamaTransformerLayerInfer):
         return
     
     # gqa attention
+    @nvtx_decorator("_context_attention_kernel", 'orange')
     def _context_attention_kernel(self, q, k, v, infer_state: LlamaInferStateInfo, layer_weight:Llama2TransformerLayerWeight) -> torch.Tensor:
         o_tensor = torch.empty_like(q)
         context_attention_fwd(q.view(-1, self.tp_q_head_num_, self.head_dim_),
@@ -36,6 +38,7 @@ class Llama2TransformerLayerInfer(LlamaTransformerLayerInfer):
         return o_tensor
     
     # gqa attention
+    @nvtx_decorator("_token_decode_attention_normal", 'orange')
     def _token_decode_attention_normal(self, q, infer_state: LlamaInferStateInfo):
         total_token_num = infer_state.total_token_num
         batch_size = infer_state.batch_size

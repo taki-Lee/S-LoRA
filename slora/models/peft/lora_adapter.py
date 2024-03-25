@@ -7,6 +7,7 @@ from slora.mprophet.lora_config import get_lora_config_json
 from slora.models.peft.layer_weights.hf_load_utils import load_hf_weights
 from slora.models.peft.layer_weights.lora_layer_weight import LoraLayerWeight
 from slora.utils.model_load import hf_load_config
+from slora.utils.infer_utils import nvtx_decorator
 
 
 def get_lora_config(lora_dir, dummy):
@@ -19,9 +20,10 @@ def get_lora_config(lora_dir, dummy):
 
 class LoraTpPartAdapter:
 
+    @nvtx_decorator("PEFT __init__", 'skyblue')
     def __init__(self, tp_rank, world_size, lora_dir, network_config,
                  swap=False, dummy=False, no_lora_swap=False, prefetch_stream=None):
-        assert world_size == 1
+        # assert world_size == 1
         self.tp_rank_ = tp_rank
         self.world_size_ = world_size
         self.lora_dir = lora_dir
@@ -49,6 +51,7 @@ class LoraTpPartAdapter:
         return (self.layers[0].w_combined is not None)
 
 
+    @nvtx_decorator("PEFT load_to_gpu", 'skyblue')
     def load_to_gpu(self, prefetch=False, bmm=False):
         if prefetch:
             with self.prefetch_stream:
@@ -59,6 +62,7 @@ class LoraTpPartAdapter:
                 layer_weight.load_to_gpu(bmm=bmm)
 
 
+    @nvtx_decorator("PEFT offload_from_gpu", 'skyblue')
     def offload_from_gpu(self,):
         for layer_weight in self.layers:
             layer_weight.offload_from_gpu()
