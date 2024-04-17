@@ -25,6 +25,7 @@ if __name__ == "__main__":
     parser.add_argument("--enable-abort", action="store_true")
     parser.add_argument("--vllm-mem-ratio", type=float, default=0.95)
     parser.add_argument("--tp", type=int, default=1) # 使用几张卡
+    parser.add_argument("--scheduler", type=str, default='slora')
     args = parser.parse_args()
 
     base_model = BASE_MODEL[args.model_setting]
@@ -59,6 +60,7 @@ if __name__ == "__main__":
         cmd += " --swap"
         # cmd += " --scheduler pets"
         # cmd += " --profile"
+        cmd += f" --scheduler {args.scheduler}"
         if args.enable_abort:
             cmd += " --enable-abort"
         if args.batch_num_adapters:

@@ -252,7 +252,7 @@ def run_exp(model_setting, backend, server, config, output, mode, seed=42, debug
         print("*** num_adapters, cv and alpha are not used in real mode ***")
     print([(k, v) for k, v in zip(BenchmarkConfig._fields, config)])
 
-    num_adapters, alpha, req_rate, cv, duration, input_range, output_range = config
+    num_adapters, alpha, req_rate, cv, duration, input_range, output_range, max_new_token = config
     # assert duration >= 30
     if mode == "synthetic":
         base_model = BASE_MODEL[model_setting]
@@ -262,7 +262,7 @@ def run_exp(model_setting, backend, server, config, output, mode, seed=42, debug
         if num_adapters == 0:
             adapter_dirs = [(base_model, None)]
             num_adapters = 1
-        save_path = f'./rand_datas/requests-{suite}.json'
+        save_path = f'./rand_datas/synthetic-requests-{suite}.json'
         is_generate = not os.path.exists(save_path)
         if is_generate:
             requests = generate_requests(num_adapters, alpha, req_rate, cv, duration,
@@ -279,20 +279,23 @@ def run_exp(model_setting, backend, server, config, output, mode, seed=42, debug
         # first generate your data using real_trace/clean_chat_data.py
         base_model = BASE_MODEL[model_setting]
         adapter_dirs = LORA_DIR[model_setting]
+        print("config ", config)
+        adapter_dirs = get_adapter_dirs(num_adapters, adapter_dirs) # add adapter clones
+        # adapter_dirs = [(base_model, adapter_dirs[i]) for i in range(num_adapters)]
         # trace_file_path = "../../../real_trace/clean_chat_conv_20231019.json"
         trace_file_path = "/workspace/S-LoRA/benchmarks/real_trace/my_traces.json"
-        adapter_dirs, requests = get_real_requests(trace_file=trace_file_path,
-                                                   req_rate=req_rate, duration=duration,
-                                                   base_model=base_model, adapter_dirs=adapter_dirs,
-                                                   input_range=input_range, output_range=output_range,
-                                                   seed=seed, max_new_token=256)
+        print(adapter_dirs)
         # print(requests)
         save_path = f'./rand_datas/real-requests-{suite}.json'
         is_generate = not os.path.exists(save_path)
+        is_generate = True
         if is_generate:
-            requests = generate_requests(num_adapters, alpha, req_rate, cv, duration,
-                                    input_range, output_range, adapter_dirs,
-                                    seed=seed)
+            adapter_dirs, requests = get_real_requests(trace_file=trace_file_path,
+                                                   req_rate=req_rate, duration=duration,
+                                                   base_model=base_model, adapter_dirs=adapter_dirs,
+                                                   input_range=input_range, output_range=output_range,
+                                                   seed=seed, max_new_token=max_new_token)
+            print(adapter_dirs)
             save_requests(requests, save_path)
         else:
             requests = load_requests(save_path)
@@ -338,6 +341,7 @@ if __name__ == "__main__":
     parser.add_argument("--append", action="store_true")
 
     parser.add_argument("--breakdown", action="store_true")
+    parser.add_argument("--my-exp", action="store_true")
     parser.add_argument("--no-lora-compute", action="store_true")
     parser.add_argument("--no-lora-swap", action="store_true")
     parser.add_argument("--no-lora-copy", action="store_true")
@@ -347,9 +351,10 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output", type=str, default=None)
     parser.add_argument("--set-max-new-token", action="store_true")
+    parser.add_argument("--max-new-token", type=int, default=256)
     args = parser.parse_args()
 
-    args.seed = int(time.time())
+    # args.seed = int(time.time())
     assert not args.no_lora_copy or args.no_lora_compute
     assert not (args.debug and args.breakdown)
 
@@ -367,7 +372,7 @@ if __name__ == "__main__":
     if args.debug or args.breakdown:
         args.output = "debug_" + args.output
 
-    suites = get_all_suites(mode=args.mode, debug=args.debug, suite=args.suite, breakdown=args.breakdown)
+    suites = get_all_suites(mode=args.mode, debug=args.debug, suite=args.suite, breakdown=args.breakdown, my_exp=args.my_exp)
 
     if not args.append:
         os.system(f"rm {args.output}")

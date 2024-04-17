@@ -37,6 +37,7 @@ BenchmarkConfig = namedtuple(
      "duration", # benchmark serving duration
      "input_range", # input length l.b. and u.b.
      "output_range", # output length l.b. and u.b.
+     "max_new_token", # max output length for all requests
     ]
 )
 
@@ -50,6 +51,7 @@ paper_suite = {
         duration = [60 * 5],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
     "ablation-cluster": BenchmarkConfig(
         num_adapters = [32],
@@ -58,7 +60,8 @@ paper_suite = {
         cv = [1],
         duration = [60 * 2],
         input_range = [[8, 512]],
-        output_range = [[8, 512]]
+        output_range = [[8, 512]],
+        max_new_token = [256],
     ),
     "ablation-cluster-cv": BenchmarkConfig(
         num_adapters = [32],
@@ -67,7 +70,8 @@ paper_suite = {
         cv = [8],
         duration = [60 * 2],
         input_range = [[8, 512]],
-        output_range = [[8, 512]]
+        output_range = [[8, 512]],
+        max_new_token = [256],
     ),
     "a10g-num-adapter": BenchmarkConfig(
         num_adapters = [1, 20, 50, 100, 200],
@@ -77,6 +81,7 @@ paper_suite = {
         duration = [60 * 5],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
     "a10g-alpha": BenchmarkConfig(
         num_adapters = [200],
@@ -86,6 +91,7 @@ paper_suite = {
         duration = [60 * 5],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
     "a10g-cv": BenchmarkConfig(
         num_adapters = [200],
@@ -95,6 +101,7 @@ paper_suite = {
         duration = [60 * 5],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
     "a10g-req-rate": BenchmarkConfig(
         num_adapters = [200],
@@ -104,6 +111,7 @@ paper_suite = {
         duration = [60 * 5],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
     "a100-40-num-adapter-short": BenchmarkConfig(
         num_adapters = [0, 1, 20, 50, 100, 200],
@@ -113,6 +121,7 @@ paper_suite = {
         duration = [15],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
     "a100-40-num-adapter": BenchmarkConfig(
         num_adapters = [0, 1, 20, 50, 100, 200],
@@ -122,6 +131,7 @@ paper_suite = {
         duration = [60 * 5],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
     "a10g-req-rate-real-short": BenchmarkConfig(
         num_adapters = [200],
@@ -131,6 +141,7 @@ paper_suite = {
         duration = [60 * 5],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
     "a10g-req-rate-real": BenchmarkConfig(
         num_adapters = [200],
@@ -140,6 +151,7 @@ paper_suite = {
         duration = [60 * 5],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
     "a100-80-S2-num-adapter": BenchmarkConfig(
         num_adapters = [1, 20, 50, 100, 200],
@@ -149,6 +161,7 @@ paper_suite = {
         duration = [60 * 5],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
     "a100-80-S2-num-adapter-bmm": BenchmarkConfig(
         num_adapters = [1, 20, 50, 100, 200],
@@ -158,6 +171,7 @@ paper_suite = {
         duration = [30],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
     "a100-80-S4-num-adapter": BenchmarkConfig(
         num_adapters = [0, 1, 100, 200, 400],
@@ -167,6 +181,7 @@ paper_suite = {
         duration = [60 * 5],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
     "a100-80-S4-req-rate": BenchmarkConfig(
         num_adapters = [400],
@@ -176,6 +191,7 @@ paper_suite = {
         duration = [60 * 5],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
     "a100-80-S4-cv": BenchmarkConfig(
         num_adapters = [400],
@@ -185,6 +201,7 @@ paper_suite = {
         duration = [60 * 5],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
     "a100-80-S2-num-adapter-vllm": BenchmarkConfig(
         num_adapters = [5],
@@ -194,6 +211,7 @@ paper_suite = {
         duration = [60 * 2],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
     "a100-80-S3-num-adapter-vllm": BenchmarkConfig(
         num_adapters = [2],
@@ -203,6 +221,7 @@ paper_suite = {
         duration = [60 * 2],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
     "a100-80-table": BenchmarkConfig(
         num_adapters = [2, 5, 100, 1000, 2000],
@@ -212,6 +231,7 @@ paper_suite = {
         duration = [60 * 2],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
     "a100-80-num-adapter-s12-peft": BenchmarkConfig(
         num_adapters = [5, 100],
@@ -221,6 +241,7 @@ paper_suite = {
         duration = [60 * 2],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
     "a100-80-num-adapter-s4-peft": BenchmarkConfig(
         num_adapters = [2, 100],
@@ -230,6 +251,7 @@ paper_suite = {
         duration = [60 * 2],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
     "a100-40-num-adapter-mp-peft": BenchmarkConfig(
         num_adapters = [2, 100],
@@ -239,6 +261,7 @@ paper_suite = {
         duration = [60 * 2],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
 }
 
@@ -252,6 +275,7 @@ breakdown_suite = {
         duration = [60],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
 
     "h100": BenchmarkConfig(
@@ -262,6 +286,7 @@ breakdown_suite = {
         duration = [60 * 1],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
 }
 
@@ -275,6 +300,7 @@ debug_suite = {
         duration = [60],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
 
     "my-suite": BenchmarkConfig(
@@ -285,6 +311,7 @@ debug_suite = {
         duration = [20],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
 
     "rate-1": BenchmarkConfig(
@@ -295,6 +322,7 @@ debug_suite = {
         duration = [20],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
 
     "rate-2": BenchmarkConfig(
@@ -305,6 +333,7 @@ debug_suite = {
         duration = [20],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
 
     "rate-3": BenchmarkConfig(
@@ -315,6 +344,7 @@ debug_suite = {
         duration = [20],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
 
     "rate-4": BenchmarkConfig(
@@ -325,6 +355,7 @@ debug_suite = {
         duration = [20],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
 
     "rate-5": BenchmarkConfig(
@@ -335,6 +366,7 @@ debug_suite = {
         duration = [20],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
 
     "rate-6": BenchmarkConfig(
@@ -345,6 +377,117 @@ debug_suite = {
         duration = [20],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
+    ),
+
+    "real-2": BenchmarkConfig(
+        num_adapters = [20],
+        alpha = [1],
+        req_rate = [2],
+        cv = [1],
+        duration = [20],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+        max_new_token = [256],
+    ),
+
+    "real-3": BenchmarkConfig(
+        num_adapters = [20],
+        alpha = [1],
+        req_rate = [3],
+        cv = [1],
+        duration = [20],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+        max_new_token = [256],
+    ),
+
+    "real-4": BenchmarkConfig(
+        num_adapters = [20],
+        alpha = [1],
+        req_rate = [4],
+        cv = [1],
+        duration = [20],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+        max_new_token = [256],
+    ),
+
+    "real-5": BenchmarkConfig(
+        num_adapters = [20],
+        alpha = [1],
+        req_rate = [5],
+        cv = [1],
+        duration = [20],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+        max_new_token = [256],
+    ),
+
+    "real-6": BenchmarkConfig(
+        num_adapters = [20],
+        alpha = [1],
+        req_rate = [6],
+        cv = [1],
+        duration = [20],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+        max_new_token = [256],
+    ),
+
+    "real-7": BenchmarkConfig(
+        num_adapters = [20],
+        alpha = [1],
+        req_rate = [7],
+        cv = [1],
+        duration = [20],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+        max_new_token = [256],
+    ),
+
+    "real-8": BenchmarkConfig(
+        num_adapters = [20],
+        alpha = [1],
+        req_rate = [8],
+        cv = [1],
+        duration = [20],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+        max_new_token = [256],
+    ),
+
+    "real-10": BenchmarkConfig(
+        num_adapters = [20],
+        alpha = [1],
+        req_rate = [10],
+        cv = [1],
+        duration = [20],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+        max_new_token = [256],
+    ),
+
+    "real-20": BenchmarkConfig(
+        num_adapters = [20],
+        alpha = [1],
+        req_rate = [20],
+        cv = [1],
+        duration = [20],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+        max_new_token = [256],
+    ),
+
+    "real-30": BenchmarkConfig(
+        num_adapters = [20],
+        alpha = [1],
+        req_rate = [30],
+        cv = [1],
+        duration = [20],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+        max_new_token = [256],
     ),
 
     "debug": BenchmarkConfig(
@@ -355,6 +498,7 @@ debug_suite = {
         duration = [60],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
 
     "no-swap": BenchmarkConfig(
@@ -365,6 +509,7 @@ debug_suite = {
         duration = [60 * 1],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
 
     "swap": BenchmarkConfig(
@@ -375,6 +520,7 @@ debug_suite = {
         duration = [60 * 1],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
 
     "a10g-no-swap": BenchmarkConfig(
@@ -385,6 +531,7 @@ debug_suite = {
         duration = [60],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
 
     "a10g": BenchmarkConfig(
@@ -395,6 +542,7 @@ debug_suite = {
         duration = [60],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
 
     "h100": BenchmarkConfig(
@@ -405,6 +553,7 @@ debug_suite = {
         duration = [60],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
 
     "ablation-no-mem": BenchmarkConfig(
@@ -416,17 +565,56 @@ debug_suite = {
         duration = [30],
         input_range = [[8, 512]],
         output_range = [[8, 512]],
+        max_new_token = [256],
     ),
 }
 
+experiment_suite = {
+    "4090-num-adapter": BenchmarkConfig(
+        num_adapters = [1, 20, 50, 100, 200],
+        alpha = [1],
+        req_rate = [5],
+        cv = [1],
+        duration = [20],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+        max_new_token = [256],
+    ),
+    "4090-req-rate": BenchmarkConfig(
+        num_adapters = [20],
+        alpha = [1],
+        # req_rate = [3, 4, 5, 6, 7, 8, 10],
+        req_rate = [4, 6, 8, 10, 12, 14, 16],
+        # req_rate = [18, 20, 24],
+        cv = [1],
+        duration = [20],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+        max_new_token = [512],
+    ),
+    "4090-max-new-token": BenchmarkConfig(
+        num_adapters = [20],
+        alpha = [1],
+        req_rate = [16],
+        cv = [1],
+        duration = [30],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+        max_new_token = [64, 128, 256, 512],
+    ),
 
-def get_all_suites(mode, debug=False, suite=None, breakdown=False):
+}
+
+
+def get_all_suites(mode, debug=False, suite=None, breakdown=False, my_exp=False):
     assert not (debug and breakdown)
     assert suite is not None
     if debug:
         exps = [{suite: debug_suite[suite]}]
     elif breakdown:
         exps = [{suite: breakdown_suite[suite]}]
+    elif my_exp:
+        exps = [{suite: experiment_suite[suite]}]
     else:
         exps = [{suite: paper_suite[suite]}]
 
@@ -434,14 +622,15 @@ def get_all_suites(mode, debug=False, suite=None, breakdown=False):
     for exp in exps:
         for workload in exp:
             (num_adapters, alpha, req_rate, cv, duration,
-                    input_range, output_range) = exp[workload]
+                    input_range, output_range, max_new_token) = exp[workload]
             if mode == "real":
                 # These arguments are not used in real trace
-                num_adapters = alpha = cv = [None]
+                # num_adapters = alpha = cv = [None]
+                pass
 
             for combination in itertools.product(
                                    num_adapters, alpha, req_rate, cv, duration,
-                                   input_range, output_range):
+                                   input_range, output_range, max_new_token):
                 suites.append(combination)
     return suites
 

@@ -44,7 +44,8 @@ ADAPTER_DIRS = [
     ]
 
 def main():
-    data_path = '/workspace/distill-bert/lora-inference/my_datasets/mixed_dataset.json'
+    data_path = '/workspace/distill-bert/lora-inference/my_datasets/extended_mixed_dataset.json'
+    # data_path = '/workspace/distill-bert/lora-inference/my_datasets/mixed_dataset.json'
     generate_data_path = './my_traces.json'
     
     with open(data_path, 'r') as f:

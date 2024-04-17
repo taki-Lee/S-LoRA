@@ -7,9 +7,10 @@ from typing import List, Tuple, Any
 from tqdm import tqdm
 import random
 from transformers import AutoTokenizer
+from slora.server.router.predictor import PER_BUCKET_LENGTH
 
 class Request:
-    def __init__(self, req_id, model_dir, adapter_dir, prompt, prompt_len, output_len, req_time, max_new_token):
+    def __init__(self, req_id, model_dir, adapter_dir, prompt, prompt_len, output_len, req_time, max_new_token=1000):
         self.req_id = req_id
         self.model_dir = model_dir 
         self.adapter_dir = adapter_dir
@@ -68,6 +69,10 @@ def generate_requests(num_adapters, alpha, req_rate, cv, duration,
     intervals = np.random.gamma(shape, scale, tot_req)
     for i in range(tot_req):
         tic += intervals[i]
+        # print(type(adapter_dirs))
+        # print(type(ind))
+        # print(type(input_lens))
+        # print(type(output_lens))
         requests.append(Request(i, adapter_dirs[ind[i]][0], adapter_dirs[ind[i]][1],
                                 dummy_prompt(input_lens[i]), int(input_lens[i]), int(output_lens[i]),
                                 tic))
@@ -76,14 +81,41 @@ def generate_requests(num_adapters, alpha, req_rate, cv, duration,
 def get_real_requests(trace_file, req_rate, duration, base_model, adapter_dirs, input_range, output_range, seed=42, max_new_token=256):
     np.random.seed(seed)
     tokenizer = AutoTokenizer.from_pretrained(base_model)
-    conversations = downsample(trace_file, req_rate, duration, tokenizer, input_range, output_range)
-    model_mapping = generate_model_mapping(conversations, adapter_dirs)
-    conversations = sort_and_rescale_by_req_time(conversations, duration)
-    reqs = parse_into_req(base_model, conversations, model_mapping, tokenizer, max_new_token)
+    if False:
+        conversations = downsample(trace_file, req_rate, duration, tokenizer, input_range, output_range)
+        model_mapping = generate_model_mapping(conversations, adapter_dirs)
+        conversations = sort_and_rescale_by_req_time(conversations, duration)
+        reqs = parse_into_req(base_model, conversations, model_mapping, tokenizer, max_new_token)
+    else:
+        conversations = my_downsample(trace_file, req_rate, duration, tokenizer, input_range, output_range)
+        model_mapping = {i:adapter for i, adapter in enumerate(adapter_dirs)}
+        my_generate_random_model(conversations, adapter_dirs)
+        conversations = sort_and_rescale_by_req_time(conversations, duration)
+        reqs = my_parse_into_req(base_model, conversations, tokenizer, max_new_token)
     return model_mapping.values(), reqs
 
 # functions below are used to generate real requests
 def downsample(json_file, req_rate, duration, tokenizer, input_range, output_range):
+    with open(json_file, "r") as file:
+       all_conversations = json.load(file)
+    
+    more_ratio = 2
+    need_num = int(req_rate * duration)
+    # sample a bit more than needed
+    selected_indicies = np.random.choice(len(all_conversations), more_ratio * need_num, replace=False)
+    downsampled_conversations = [all_conversations[idx] for idx in selected_indicies]
+    for idx, conv in enumerate(downsampled_conversations):
+        prompt_len = len(tokenizer(conv["conversation"][0]["content"]).input_ids)
+        output_len = len(tokenizer(conv["conversation"][1]["content"]).input_ids)
+        if prompt_len >= input_range[1] or output_len >= output_range[1]:
+            # to avoid OOM in some configurations
+            downsampled_conversations.pop(idx)
+    downsampled_conversations = downsampled_conversations[:need_num]
+    print(f"Downsampled {len(downsampled_conversations)}")
+    return downsampled_conversations
+
+# functions below are used to generate real requests
+def my_downsample(json_file, req_rate, duration, tokenizer, input_range, output_range):
     def filter(conversations, token_range):
         new_convs = []
         buckets = [0]*10
@@ -91,7 +123,7 @@ def downsample(json_file, req_rate, duration, tokenizer, input_range, output_ran
             # print(conv["conversation"][1]["content"])
             prompt_len = len(tokenizer(str(conv["conversation"][0]["content"])).input_ids)
             output_len = len(tokenizer(str(conv["conversation"][1]["content"])).input_ids)
-            buckets[output_len//100] += 1
+            buckets[output_len//PER_BUCKET_LENGTH] += 1
             if prompt_len+output_len>token_range[0] and prompt_len+output_len<token_range[1]:
                 new_convs.append(conv)
         print("filtered all_conversation num: ", len(new_convs))
@@ -162,3 +194,25 @@ def parse_into_req(base_model, conversations, model_mapping, tokenizer, max_new_
     # print(reqs)
     return reqs
 
+def my_generate_random_model(conversations, adapter_dirs):
+    for conv in conversations:
+        model = conv["model"]
+        adapter_dir = random.choice(adapter_dirs)
+        while (not adapter_dir.startswith(model)) :
+            adapter_dir = random.choice(adapter_dirs)
+        conv["model"] = adapter_dir
+
+def my_parse_into_req(base_model, conversations, tokenizer, max_new_token=256):
+    reqs = []
+    for idx, conv in enumerate(tqdm(conversations, desc="parse into reqs")):
+        model = conv["model"]
+        # print(conv["conversation"][0]["content"])
+        prompt_len = len(tokenizer(conv["conversation"][0]["content"]).input_ids)
+        output_len = len(tokenizer(conv["conversation"][1]["content"]).input_ids)
+        
+        req = Request(req_id=idx, model_dir=base_model, adapter_dir=model, 
+              prompt=conv["conversation"][0]["content"], prompt_len=prompt_len,
+              output_len=output_len, req_time=conv["tstamp"], max_new_token=max_new_token)
+        reqs.append(req)
+    # print(reqs)
+    return reqs
