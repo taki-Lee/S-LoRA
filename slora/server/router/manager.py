@@ -26,9 +26,10 @@ from slora.server.router.pets_req_queue import PETSReqQueue
 from slora.server.router.peft_req_queue import PEFTReqQueue
 from slora.server.router.cluster_req_queue import ClusterReqQueue
 from slora.server.router.abort_req_queue import AbortReqQueue
+from slora.server.router.ILP_req_queue import ILPReqQueue
 from slora.server.router.predictor import Predictor, PER_BUCKET_LENGTH
 
-from slora.utils.infer_utils import get_profiler, nvtx_decorator_async, nvtx_decorator, use_predictor
+from slora.utils.infer_utils import get_profiler, nvtx_decorator_async, nvtx_decorator, use_predictor, use_scheduler
 
 
 class RouterManager:
@@ -65,6 +66,10 @@ class RouterManager:
             print("Using PEFTReqQueue")
             self.req_queue = PEFTReqQueue(input_params.max_total_token_num, input_params.batch_max_tokens,
                                       input_params.running_max_req_size)
+        elif input_params.scheduler == 'ILP':
+            print("Using ILPReqQueue")
+            self.req_queue = ILPReqQueue(input_params.max_total_token_num, input_params.batch_max_tokens,
+                                    input_params.running_max_req_size)
         elif input_params.batch_num_adapters is not None:
             print("Using ClusterReqQueue")
             self.req_queue = ClusterReqQueue(input_params.max_total_token_num, input_params.batch_max_tokens,
@@ -94,7 +99,9 @@ class RouterManager:
         self.stats_tool = Stats(log_stats, log_stats_interval)
         self.is_offload_request = False
         # self.predictor = Predictor("/workspace/distill-bert/knowledge-distillation-transformers-pytorch-sagemaker/lslee/distill-bert-mixed-20/checkpoint-2500")
-        self.predictor = Predictor("/workspace/distill-bert/knowledge-distillation-transformers-pytorch-sagemaker/lslee/distill-bert-MUZUBAI-40/checkpoint-2500")
+        # self.predictor = Predictor("/workspace/distill-bert/knowledge-distillation-transformers-pytorch-sagemaker/lslee/distill-bert-MUZUBAI-40/checkpoint-2500")
+        # self.predictor = Predictor("/workspace/distill-bert/knowledge-distillation-transformers-pytorch-sagemaker/lslee/distill-bert-extended-mixed-20/checkpoint-21100")
+        self.predictor = Predictor("/workspace/distill-bert/knowledge-distillation-transformers-pytorch-sagemaker/lslee/new_dataset/distill-bert-extended-mixed-40/checkpoint-21200")
 
 
     async def wait_to_model_ready(self):
@@ -148,7 +155,7 @@ class RouterManager:
     ):
         predict_output_len = 1000
         if use_predictor():
-            predict_output_len = (self.predictor.predict(prompt_ids) + 1) * PER_BUCKET_LENGTH
+            predict_output_len = (self.predictor.predict(prompt_ids, sampling_params.output_len) + 1) * PER_BUCKET_LENGTH
         req = Req(adapter_dir, request_id, prompt_ids, sampling_params, predict_output_len)
         # print("predict_output_len:", req.predict_output_len) # 200 / 300
         self.req_queue.append(req)
@@ -181,6 +188,7 @@ class RouterManager:
                           "total_output_tokens:" , self.running_batch.calcu_output_tokens(),
                           "total_used_tokens:", self.running_batch.calcu_input_tokens() + self.running_batch.calcu_output_tokens(),
                           "max_need_tokens:", self.running_batch.calcu_max_need_tokens(),
+                          "predictor_accuracy:", self.predictor.cal_accuracy(),
                         #   "max token num:" , self.input_params.max_total_token_num,
                         #   "max token used ratio:", self.running_batch.calcu_max_tokens() / self.input_params.max_total_token_num,
                           "can_use_mem_size:", self.model_rpcs[0].model.model.mem_manager.can_use_mem_size,
@@ -249,15 +257,18 @@ class RouterManager:
             return
         else:
             # schedule requests when reqs arrive/complete
-            if self.req_queue.is_new_req_come == True or self.is_offload_request == True:
-                new_mini_batch = self.req_queue.generate_new_batch(self.running_batch, self.lora_ranks)
-                self.req_queue.is_new_req_come = False
-                self.is_offload_request = False
+            if use_scheduler():
+                if self.req_queue.is_new_req_come == True or self.is_offload_request == True:
+                    new_mini_batch = self.req_queue.generate_new_batch(self.running_batch, self.lora_ranks)
+                    self.req_queue.is_new_req_come = False
+                    self.is_offload_request = False
+                else:
+                    new_mini_batch = None
             else:
-                new_mini_batch = None
+                # schedule after every decode
+                new_mini_batch = self.req_queue.generate_new_batch(self.running_batch, self.lora_ranks)
+
             
-            # schedule after every decode
-            # new_mini_batch = self.req_queue.generate_new_batch(self.running_batch, self.lora_ranks)
             if self.input_params.enable_abort and len(self.req_queue.abort_req_list) > 0:
                 self.send_to_detokenization.send_pyobj(BatchAbortReq(self.req_queue.abort_req_list))
                 self.req_queue.reset_abort_list()

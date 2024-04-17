@@ -4,6 +4,7 @@ from matplotlib.ticker import FuncFormatter
 
 from scipy import stats
 import numpy as np
+import os
 
 def to_percent(temp, position):
     return '%.2f'%(temp*100) + '%'
@@ -120,15 +121,24 @@ def main():
     results_paths = [
         # './results.json',
         ]
-    server_paths = [
-        # './logs/real_server_tp_1_cluster_None.log',
-        # './logs/real_server_tp_1_cluster_8.log',
-        # '/workspace/S-LoRA/cpp/logs/0310/real_server_tp_1_cluster_None_truncate.log',
-        '/workspace/S-LoRA/cpp/logs/0319/mysuite/real_server_tp_1_cluster_8.log',
-        '/workspace/S-LoRA/cpp/logs/0319/mysuite/real_server_tp_1_cluster_None.log',
-        '/workspace/S-LoRA/cpp/logs/0319/mysuite/real_server_tp_1_cluster_None_pre.log',
-    ]
     
+    server_paths = [
+        '/workspace/S-LoRA/benchmarks/logs/schedule_strategy/real_server_FCFS.log',
+        '/workspace/S-LoRA/benchmarks/logs/schedule_strategy/real_server_cluster_8.log',
+        '/workspace/S-LoRA/benchmarks/logs/schedule_strategy/real_server_ILP_predictor.log',
+    ]
+    # server_paths = [
+    #     # './logs/real_server_tp_1_cluster_None.log',
+    #     # './logs/real_server_tp_1_cluster_8.log',
+    #     # '/workspace/S-LoRA/cpp/logs/0310/real_server_tp_1_cluster_None_truncate.log',
+    #     '/workspace/S-LoRA/cpp/logs/0326/total/real_server_tp_1_cluster_8_pre_0.log',
+    #     '/workspace/S-LoRA/cpp/logs/0326/total/real_server_tp_1_cluster_None_pre_0.log',
+    #     '/workspace/S-LoRA/cpp/logs/0326/total/real_server_tp_1_cluster_None_pre_1.log',
+    # ]
+    
+    save_dir = '/workspace/S-LoRA/benchmarks/logs/schedule_strategy_dur_20_no_filter'
+    server_paths = [os.path.join(save_dir, f_name) for f_name in os.listdir(save_dir) if f_name.startswith("real_server_")]
+
 
     batch_sizes, cur_used_tokens, allocated_tokens, cur_adapter_sizes, can_use_sizes, token_used_ratios = [], [], [], [], [], []
     for path in results_paths:
@@ -146,10 +156,10 @@ def main():
         token_used_ratios.append(tr)
         
         
-        
-    names = ['slora', 'ILP-opt', 'ILP-opt-pre']
-    draw_CDFs(batch_sizes, './figures/real-real-0319/CDF_batch_size.png', 'batch_size', names)
-    draw_CDFs(token_used_ratios, './figures/real-real-0319/CDF_token_used_ratio.png', 'Utilization of KV Cache', names)
+    # names = ['slora', 'ILP+predictor', 'ILP-ideal']
+    names = [path.split('/')[-1] for path in server_paths]
+    draw_CDFs(batch_sizes, os.path.join(save_dir, 'CDF_batch_size.png'), 'batch_size', names)
+    draw_CDFs(token_used_ratios, os.path.join(save_dir, 'CDF_token_used_ratio.png'), 'Utilization of KV Cache', names)
 
 
 

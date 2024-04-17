@@ -129,3 +129,18 @@ def use_predictor():
     if "USE_PREDICTOR" in os.environ and os.environ["USE_PREDICTOR"] == '1':
         return True
     return False
+
+def use_scheduler():
+    if "USE_SCHEDULER" in os.environ and os.environ["USE_SCHEDULER"] == '1':
+        return True
+    return False
+
+def use_FCFS():
+    if "SCHEDULE_FCFS" in os.environ and os.environ["SCHEDULE_FCFS"] == '1':
+        return True
+    return False
+
+def use_LCFS():
+    if "SCHEDULE_LCFS" in os.environ and os.environ["SCHEDULE_LCFS"] == '1':
+        return True
+    return False

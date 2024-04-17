@@ -150,7 +150,10 @@ test_schedule_strategy()
 }
 
 # strategy must in ["FCFS", "slora", "FCFS_predictor", "slora_predictor", "ILP_predictor",]
-strategy="FCFS"
+# strategy="FCFS"
+# logs_dir="logs/ILP_effectiveness"
+# test_schedule_strategy $strategy $logs_dir
+
+strategy="FCFS_predictor"
 logs_dir="logs/ILP_effectiveness"
 test_schedule_strategy $strategy $logs_dir
-# test_max_new_token

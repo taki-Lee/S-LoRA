@@ -9,7 +9,7 @@ dist
 .DS_Store
 *.json
 *.log
-*.sh
+# *.sh
 *.nsys-rep
 *.model
 LLM-models

@@ -46,7 +46,7 @@ class InferAdapter:
         h = adapter.network_config["hidden_size"]
         head_num = adapter.network_config["num_attention_heads"]
         head_dim = h // head_num
-        print("head_num: %d  head_dim: %d"%(head_num, head_dim)) # [32, 128]
+        # print("head_num: %d  head_dim: %d"%(head_num, head_dim)) # [32, 128]
         for i in range(adapter.network_config["num_hidden_layers"]):
             adapter.layers[i].load_to_gpu(prefetch=prefetch)
             #self.mem_manager.key_buffer[i][loc[:r]] = adapter.layers[i].q_lora_A.transpose(0, 1).reshape(r, head_num, head_dim)

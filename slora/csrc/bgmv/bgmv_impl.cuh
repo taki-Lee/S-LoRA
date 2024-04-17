@@ -178,7 +178,7 @@ __global__ void bgmv_multi_lora_rank_expand_kernel(T* __restrict__ Y, const T* _
   size_t w_outer_idx = loc_indicies[start_idx + lora_rank * qkvo + bin];
   size_t w_inner_idx = bin_offset;
   T scale = lora_scales[lora_idx];
-
+  
   // load X and W
   vec_t<T, vec_size> x_vec;
   vec_t<T, vec_size> w_vec;

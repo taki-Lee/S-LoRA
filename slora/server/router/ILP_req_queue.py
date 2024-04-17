@@ -3,10 +3,12 @@ import asyncio
 import numpy as np
 from typing import List
 from ..io_struct import Batch, Req
-from slora.utils.infer_utils import  calculate_time, use_FCFS, use_LCFS, use_predictor
+from slora.utils.infer_utils import  calculate_time
+from .ILP_scheduler import ILPScheduler
+import time
 
 
-class ReqQueue:
+class ILPReqQueue:
 
     def __init__(self, max_total_tokens, batch_max_tokens, running_max_req_size) -> None:
         self.max_total_tokens = max_total_tokens
@@ -14,9 +16,11 @@ class ReqQueue:
         self.batch_max_tokens = batch_max_tokens
         self.running_max_req_size = running_max_req_size
         self.waiting_req_list: List[Req] = []
+        self.is_new_req_come = False
         
     def append(self, req):
         self.waiting_req_list.append(req)
+        self.is_new_req_come = True
         return
     
     def _init_cache_list(self, current_batch:Batch, lora_ranks):
@@ -39,14 +43,8 @@ class ReqQueue:
     
     # @calculate_time(show=True, min_cost_ms=0.1)
     def _can_add_new_req(self, req, lora_ranks):
-        # TODO: add check accoding to min(max_new_token, predict_output_len) to support FCFS-pre, slora-pre
         # self.cache_len_list.append((req.input_len + 1, req.max_output_len - 1)) # hard to analysis
-        # self.cache_len_list.append((req.input_len + 1, req.max_new_token - 1)) # hard to analysis
-        if use_predictor():
-            self.cache_len_list.append((req.input_len + 1, req.predict_output_len - 1))
-        else:
-            self.cache_len_list.append((req.input_len + 1, req.max_new_token - 1)) # hard to analysis
-
+        self.cache_len_list.append((req.input_len + 1, req.max_new_token - 1)) # hard to analysis
         self.cache_len_list.sort(key=lambda x: -x[1])
         if req.adapter_dir not in self.adapters:
             self.adapter_size += lora_ranks[req.adapter_dir] * 4
@@ -64,51 +62,45 @@ class ReqQueue:
             return True
         else:
             return False
-    
-    def update_counter(self, req):
-        pass 
 
+    # @calculate_time(show=True, min_cost_ms=0.01)
     def generate_new_batch(self, current_batch:Batch, lora_ranks: dict[str, int]):
         if current_batch is not None and len(current_batch.reqs) >= self.running_max_req_size:
             return None
         
         self._init_cache_list(current_batch, lora_ranks)
-        can_run_list = []
-        new_batch_total_tokens = 0
-        aborted_count = 0
-        if use_LCFS():
-            # LCFS
-            # for req in reversed(self.waiting_req_list): # LCLS
-            for i in range(len(self.waiting_req_list)-1, -1, -1):
-                req = self.waiting_req_list[i]
-                if req.aborted:
-                    aborted_count += 1
-                    continue
-                if (self._can_add_new_req(req, lora_ranks) and
-                    new_batch_total_tokens + req.input_len <= self.batch_max_tokens):
-                    can_run_list.append(req)
-                    new_batch_total_tokens += req.input_len
-                else:
-                    break
-        else:
-            # FCFS
-            for req in self.waiting_req_list: # FCFS
-                if req.aborted:
-                    aborted_count += 1
-                    continue
-                if (self._can_add_new_req(req, lora_ranks) and
-                    new_batch_total_tokens + req.input_len <= self.batch_max_tokens):
-                    can_run_list.append(req)
-                    new_batch_total_tokens += req.input_len
-                else:
-                    break
-
-        if len(can_run_list) != 0:
-            new_batch = Batch(uuid.uuid4().hex, can_run_list)
-            self.waiting_req_list = self.waiting_req_list[len(can_run_list) + aborted_count:]
+        
+        # removing aborted request
+        self.waiting_req_list = [req for req in self.waiting_req_list if req.aborted == False]
+        # print("length of waiting_req_list: ", len(self.waiting_req_list))
+        # start_time = time.time()
+        best_run_list = self.generate_best_run_list(current_batch, lora_ranks)
+        # print("ILP cost time: %f" % ((time.time()-start_time)*1000))
+        if len(best_run_list) != 0:
+            new_batch = Batch(uuid.uuid4().hex, best_run_list)
+            L = len(self.waiting_req_list)
+            self.waiting_req_list = [req for req in self.waiting_req_list if req not in best_run_list]
+            # print("removing %d from waiting_req_list, %d requests waiting. " % (L-len(self.waiting_req_list), len(self.waiting_req_list)))
             return new_batch
         else:
             return None
+
+        
+        
+    def generate_best_run_list(self, current_batch:Batch, lora_ranks: dict[str, int]):
+        if len(self.waiting_req_list) == 0:
+            # print("waiting req list is empty, no request to serve. skip generating new batch")
+            return []
+        serving_reqs = current_batch.reqs if current_batch is not None else []
+        waiting_reqs = self.waiting_req_list
+
+        solver = ILPScheduler(serving_req_list=serving_reqs, 
+                              waiting_req_list=waiting_reqs, 
+                              lora_ranks=lora_ranks,
+                              max_total_tokens=self.max_total_tokens)
+        
+        best_run_list = solver.solve()
+        return best_run_list
 
 
     def next_batch(self):

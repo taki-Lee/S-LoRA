@@ -10,32 +10,36 @@ from slora.utils.infer_utils import use_predictor
 class ILPScheduler:
     def __init__(self, serving_req_list, waiting_req_list, lora_ranks, max_total_tokens, is_truncate=True, is_priority=True):
         self.serving_req_list: List[Req] = serving_req_list
-        if is_truncate:
-            self.waiting_req_list: List[Req] = waiting_req_list[:64]
-        else:
-            self.waiting_req_list: List[Req] = waiting_req_list
+        self.waiting_req_list: List[Req] = waiting_req_list
 
-        self.lora_ranks = lora_ranks # adapter size = lora_rank * 4
+        self.lora_ranks = lora_ranks # all adapters, {adapter_dir: lora_rank}, adapter size = lora_rank * 4
         self.max_total_tokens = max_total_tokens
         self.is_truncate = is_truncate
         self.is_priority = is_priority
-        self.MAX_TIME = 200.0
         self.TRUNCATE_POS = 50
+        self.MAX_TIME = self.TRUNCATE_POS * 1.2
 
     def SCIP_solve(self):
         # solver = pywraplp.Solver.CreateSolver("SCIP")
         solver = pywraplp.Solver.CreateSolver("SCIP")
         x = []
         y = []
+        adapters = set()
         adapter_count = {}
         waiting_req_num = len(self.waiting_req_list)
+
+        # collect adapters in request pool and in serving
+        for req in self.serving_req_list:
+            adapters.add(req.adapter_dir)
+        for req in self.waiting_req_list:
+            adapters.add(req.adapter_dir)
 
         # add x[i]
         for i in range(waiting_req_num):
             x.append(solver.IntVar(0.0, 1.0, 'x_%d'%i))
         
         # add y[i]
-        for i, (adp_dir, rank) in enumerate(self.lora_ranks.items()):
+        for i, adp_dir in enumerate(adapters):
             adapter_count[adp_dir] = []
             y.append(solver.IntVar(0.0, 1.0, 'y_%d' % i))
 
@@ -49,12 +53,12 @@ class ILPScheduler:
         
         for i, (adp_name, counts) in enumerate(adapter_count.items()):
             solver.Add(y[i] <= solver.Sum(counts))
-            # print("counts, ", counts)
             for is_use in counts:
                 solver.Add(y[i] >= is_use)
         
         # total adapter size
-        adapter_sizes = [y[i] * rank * 4 for i, (adp_name, rank) in enumerate(self.lora_ranks.items())]
+        # adapter_sizes = [y[i] * rank * 4 for i, (adp_name, rank) in enumerate(self.lora_ranks.items())]
+        adapter_sizes = [y[i] * self.lora_ranks[adp_name] * 4 for i, adp_name in enumerate(adapters)]
 
         # max needed generate tokens
         cache_list = []
@@ -98,6 +102,7 @@ class ILPScheduler:
             solver.Add(solver.Sum(used_gen_tokens[:i+1]) + left_tokens[i]*size_array[i] + solver.Sum(adapter_sizes) <= self.max_total_tokens)
 
         solver.Maximize(solver.Sum(x))
+        solver.set_time_limit(20) # milliseconds
         status = solver.Solve()
 
         best_run_list = []
@@ -124,8 +129,10 @@ class ILPScheduler:
     def solve(self):
         if self.is_priority:
             # sort by priority
-            sort_list = [(req, float((req.input_len+req.max_output_len)/(self.MAX_TIME - i))) 
+            sort_list = [(req, float((req.input_len+req.max_output_len)/(len(self.waiting_req_list) + self.MAX_TIME - i))) 
                          for i, req in enumerate(self.waiting_req_list)]
+            # sort_list = [(req, req.input_len+req.max_output_len) 
+                        #  for i, req in enumerate(self.waiting_req_list)]
             sort_list.sort(key=lambda x:x[1])
             self.waiting_req_list = [req for (req, pri) in sort_list]
             
@@ -133,11 +140,7 @@ class ILPScheduler:
             # truncate
             self.waiting_req_list = self.waiting_req_list[:self.TRUNCATE_POS]
         
-        if True:
-            best_run_list = self.SCIP_solve()
-        else:
-            # slower
-            best_run_list = self.CP_SAT_solve()
+        best_run_list = self.SCIP_solve()
 
         return best_run_list
         

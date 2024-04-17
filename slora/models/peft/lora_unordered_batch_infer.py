@@ -1,4 +1,6 @@
 import numpy as np
+import json
+import time
 import torch
 import torch.nn as nn
 from typing import final
@@ -283,6 +285,21 @@ class LoraUnorderedBatchInfer:
 
         if not no_lora_compute:
             # mark_start("get_q")
+            # j_dict = {}
+            # j_dict['input_embs'] = input_embs.tolist()
+            # j_dict['base_layer_infer.embed_dim_'] = base_layer_infer.embed_dim_
+            # j_dict['self.key_buffer[layer_id]'] = self.key_buffer[layer_id].tolist()
+            # j_dict['self.value_buffer[layer_id]'] = self.value_buffer[layer_id].tolist()
+            # j_dict['self.infer_adapter.a_start'] = self.infer_adapter.a_start.tolist()
+            # j_dict['self.infer_adapter.a_len'] = self.infer_adapter.a_len.tolist()
+            # j_dict['self.infer_adapter.a_loc'] = self.infer_adapter.a_loc.tolist()
+            # j_dict['self.req_bins'] = self.req_bins.tolist()
+            # j_dict['self.infer_adapter.a_scaling'] = self.infer_adapter.a_scaling.tolist()
+            # j_dict['self.delta'] = [d.tolist() for d in self.delta]
+            # with open(f"./rand_datas/kernel_inputs_{int(time.time())}.json", 'w') as f:
+            #     json.dump(j_dict, f)
+            
+            
             delta_qA = self.delta[0]
             with nvtx.annotate("dispatch_bgmv_Ad_%d_bs_%d" % (len(self.infer_adapter.adapter_dirs), self.batch_size), color='red'):
                 dispatch_bgmv(delta_qA, input_embs.view(-1, base_layer_infer.embed_dim_), 
@@ -343,7 +360,7 @@ class LoraUnorderedBatchInfer:
             # delta_vA = None
             # mark_end("get_v")
 
-        return q        
+        return q
 
     @nvtx_decorator("PEFT _stream_batch_lora_get_qkv", 'skyblue')
     def _stream_batch_lora_get_qkv(self, layer_id, input_embs, cache_k, cache_v, infer_state, no_lora_compute=False, no_lora_copy=False)->torch.Tensor:

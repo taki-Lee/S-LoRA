@@ -139,19 +139,19 @@ class Batch:
             if req.output_ids[-1] == eos_id and req.sample_params.ignore_eos == False:
                 req.has_generate_finished = True
                 has_new_finish = True
-                print("req abort eos")
+                # print("req abort eos")
             if len(req.output_ids) >= req.max_output_len or req.aborted:
                 req.has_generate_finished = True
                 has_new_finish = True
-                print("req abort exceed max_output_len")
+                # print("req abort exceed max_output_len")
             if len(req.output_ids) >= req.max_new_token or req.aborted:
                 req.has_generate_finished = True
                 has_new_finish = True
-                print("req abort exceed max_new_token")
+                # print("req abort exceed max_new_token")
             if len(req.output_ids) >= req.predict_output_len or req.aborted:
                 req.has_generate_finished = True
                 has_new_finish = True
-                print("req abort exceed pre_dict_output_len")
+                # print("req abort exceed pre_dict_output_len")
         return has_new_finish
 
     def filter_finished(self):
