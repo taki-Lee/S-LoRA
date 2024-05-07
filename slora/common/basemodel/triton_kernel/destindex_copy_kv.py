@@ -5,7 +5,6 @@ import triton.language as tl
 from slora.utils.infer_utils import nvtx_decorator
 
 @triton.jit
-@nvtx_decorator("_fwd_kernel_destindex_copy_kv")
 def _fwd_kernel_destindex_copy_kv(
     K, Dest_loc,
     Out,
@@ -54,7 +53,6 @@ def destindex_copy_kv(K, DestLoc, Out):
 
 
 @triton.jit
-@nvtx_decorator("_fwd_kernel_destindex_copy_quantize_kv")
 def _fwd_kernel_destindex_copy_quantize_kv(
     K, Dest_loc, Out, Out_scale,
     stride_k_bs, stride_k_h, stride_k_d,
@@ -80,8 +78,8 @@ def _fwd_kernel_destindex_copy_quantize_kv(
     tl.store(os_ptrs, data_scale, mask=offs_h[:, None] < head_num)
 
 
-@torch.no_grad()
 @nvtx_decorator("destindex_copy_quantize_kv")
+@torch.no_grad()
 def destindex_copy_quantize_kv(K, DestLoc, Out, Out_scale):
     seq_len = DestLoc.shape[0]
     head_num = K.shape[1]

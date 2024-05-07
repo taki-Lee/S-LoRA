@@ -7,7 +7,6 @@ from slora.utils.infer_utils import nvtx_decorator
 
 
 @triton.jit
-@nvtx_decorator("_fwd_kernel_token_att1", 'orange')
 def _fwd_kernel_token_att1(
     Q, K, sm_scale, B_Loc, B_Start_Loc, B_Seqlen, max_input_len,
     Att_Out,

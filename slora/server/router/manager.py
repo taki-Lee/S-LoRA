@@ -56,7 +56,8 @@ class RouterManager:
             config, _ = get_lora_config(lora_dir, input_params.dummy)
             self.lora_ranks[lora_dir] = config["r"]
         self.lora_ranks[None] = 0
-        
+        print("lora_ranks: ", self.lora_ranks)
+        # exit()
         print("input_params:\n", input_params)
         if input_params.scheduler == "pets":
             print("Using PETSReqQueue")
@@ -98,10 +99,8 @@ class RouterManager:
 
         self.stats_tool = Stats(log_stats, log_stats_interval)
         self.is_offload_request = False
-        # self.predictor = Predictor("/workspace/distill-bert/knowledge-distillation-transformers-pytorch-sagemaker/lslee/distill-bert-mixed-20/checkpoint-2500")
-        # self.predictor = Predictor("/workspace/distill-bert/knowledge-distillation-transformers-pytorch-sagemaker/lslee/distill-bert-MUZUBAI-40/checkpoint-2500")
-        # self.predictor = Predictor("/workspace/distill-bert/knowledge-distillation-transformers-pytorch-sagemaker/lslee/distill-bert-extended-mixed-20/checkpoint-21100")
-        self.predictor = Predictor("/workspace/distill-bert/knowledge-distillation-transformers-pytorch-sagemaker/lslee/new_dataset/distill-bert-extended-mixed-40/checkpoint-21200")
+
+        self.predictor = Predictor("/home/hadoop-hdp/codes/train_predictor/lslee/alpaca-llama-2-13b/distill-bert-extended-mixed-60/checkpoint-5800")
 
 
     async def wait_to_model_ready(self):
@@ -192,7 +191,7 @@ class RouterManager:
                         #   "max token num:" , self.input_params.max_total_token_num,
                         #   "max token used ratio:", self.running_batch.calcu_max_tokens() / self.input_params.max_total_token_num,
                           "can_use_mem_size:", self.model_rpcs[0].model.model.mem_manager.can_use_mem_size,
-                          "requests in current batch: ", self.running_batch.id_to_reqs.keys(),
+                        #   "requests in current batch: ", self.running_batch.id_to_reqs.keys(),
 
                           )
                     

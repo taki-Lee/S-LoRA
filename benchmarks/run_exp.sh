@@ -24,20 +24,39 @@ suite='my-suite'
 #     --set-max-new-token \
 #     &> logs/real_run_${suite}.log
 
-# suite="4090-req-rate"
-# logs_dir="logs/schedule_strategy_dur_20_no_filter"
+
+
+# suite="a100-req-rate"
+# # logs_dir="logs/ILP_effectiveness"
+# logs_dir="logs/req_rate"
+# model_setting="debug-13b"
 # python run_exp.py --my-exp \
 #     --suite ${suite} \
-#     --model-setting Real \
+#     --model-setting ${model_setting} \
 #     --mode real \
 #     --set-max-new-token \
 #     &> ${logs_dir}/real_run_${suite}.log
 
-suite="4090-req-rate"
-logs_dir="logs/ILP_effectiveness"
+# suite="a100-max-new-token"
+# logs_dir="logs/max_new_token"
+
+# suite="a100-num-adapter"
+# logs_dir="logs/num_adapters"
+
+# suite="a100-req-rate"
+# logs_dir="logs/ILP_effectiveness"
+
+# suite="a100-overhead"
+# suite="a100-discover-problem"
+# logs_dir="logs/analyze_memory"
+
+suite="a100-req-rate"
+logs_dir="logs/test"
+
+model_setting="debug-13b"
 python run_exp.py --my-exp \
     --suite ${suite} \
-    --model-setting Real \
+    --model-setting ${model_setting} \
     --mode real \
     --set-max-new-token \
     &> ${logs_dir}/real_run_${suite}.log

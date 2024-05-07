@@ -8,7 +8,6 @@ from slora.utils.infer_utils import nvtx_decorator
 
 if triton.__version__ >= "2.1.0":
     @triton.jit
-    @nvtx_decorator("_fwd_kernel", 'tomato')
     def _fwd_kernel(
         Q, K, V, sm_scale, B_Start_Loc, B_Seqlen,  # B_LOC 内部记录每个batch 输入的真实位置， B_SEQ_len 记录当前输入的真实长度
         Out,
@@ -91,8 +90,8 @@ if triton.__version__ >= "2.1.0":
         tl.store(out_ptrs, acc, mask=offs_m[:, None] < cur_batch_seq_len)
         return
 
-    @torch.no_grad()
     @nvtx_decorator("context_attention_fwd", 'tomato')
+    @torch.no_grad()
     def context_attention_fwd(q, k, v, o, b_start_loc, b_seq_len, max_input_len):
         BLOCK = 128
         # shape constraints
@@ -123,7 +122,6 @@ if triton.__version__ >= "2.1.0":
 
 elif triton.__version__ == "2.0.0":
     @triton.jit
-    @nvtx_decorator("_fwd_kernel", 'tomato')
     def _fwd_kernel(
         Q, K, V, sm_scale, B_Start_Loc, B_Seqlen,
         TMP,  # NOTE: TMP is a scratchpad buffer to workaround a compiler bug

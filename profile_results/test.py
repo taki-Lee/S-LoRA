@@ -74,12 +74,12 @@ def test_dataset_len():
         serve_data = json.load(f)
     print("serve_dataset_len:", len(serve_data))
 
-def collect_overhead():
+def collect_overhead(path):
     print("==================collect overhead==================")
     
     cost = {}
 
-    path = '/workspace/S-LoRA/benchmarks/logs/overhead/real_server_tp_1_cluster_None_pre_1_time.log'
+    # path = '/workspace/S-LoRA/benchmarks/logs/overhead/real_server_tp_1_cluster_None_pre_1_time.log'
     with open(path, 'r') as f:
         lines = f.readlines()
     for line in lines:
@@ -134,5 +134,6 @@ def collect_run_exp(direction):
 # test_ILP_time()
 # test_profile_predictor_accuracy()
 # test_dataset_len()
-# collect_overhead()
-collect_run_exp("/workspace/S-LoRA/benchmarks/logs/max_new_token")
+# collect_run_exp("../benchmarks/logs/ILP_effectiveness")
+collect_run_exp("../benchmarks/logs/test")
+# collect_overhead("../benchmarks/logs/test/real_server_ILP_predictor.log")

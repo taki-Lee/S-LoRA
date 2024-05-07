@@ -7,7 +7,6 @@ from slora.utils.infer_utils import nvtx_decorator
 
 
 @triton.jit
-@nvtx_decorator('_fwd_kernel', 'tomato')
 def _fwd_kernel(
     Logics, V, Out,
     B_Loc, B_Start_Loc, B_Seqlen, max_input_len,

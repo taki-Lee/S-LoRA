@@ -283,7 +283,7 @@ def run_exp(model_setting, backend, server, config, output, mode, seed=42, debug
         adapter_dirs = get_adapter_dirs(num_adapters, adapter_dirs) # add adapter clones
         # adapter_dirs = [(base_model, adapter_dirs[i]) for i in range(num_adapters)]
         # trace_file_path = "../../../real_trace/clean_chat_conv_20231019.json"
-        trace_file_path = "/workspace/S-LoRA/benchmarks/real_trace/my_traces.json"
+        trace_file_path = "/home/hadoop-hdp/codes/S-LoRA/benchmarks/real_trace/my_traces_llama_2_13b.json"
         print(adapter_dirs)
         # print(requests)
         save_path = f'./rand_datas/real-requests-{suite}.json'

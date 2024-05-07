@@ -7,9 +7,9 @@ BASE_MODEL = {
         "S3": "huggyllama/llama-13b",
         "S4": "huggyllama/llama-13b",
         # "Real": "huggyllama/llama-7b",
-        "Real": "/workspace/S-LoRA/LLM-models/LLaMA-2-7b/Llama-2-7b-hf",
-        "debug": "/workspace/S-LoRA/LLM-models/LLaMA-2-7b/Llama-2-7b-hf",
-        "debug-13b": "/workspace/S-LoRA/LLM-models/LLaMA-2-13b/Llama-2-13b-chat-hf",
+        "Real": "../../LLM-models/LLaMA-2-7b/Llama-2-7b-hf",
+        "debug": "../../LLM-models/LLaMA-2-7b/Llama-2-7b-hf",
+        "debug-13b": "../../LLM-models/LLaMA-2-13b/Llama-2-13b-chat-hf",
 }
 
 LORA_DIR = {
@@ -19,13 +19,14 @@ LORA_DIR = {
         "S3": ["dummy-lora-13b-rank-16"],
         "S4": ["dummy-lora-13b-rank-64",
                "dummy-lora-13b-rank-32", "dummy-lora-13b-rank-16",],
-        # "Real": ["tloen/alpaca-lora-7b", "MBZUAI/bactrian-x-llama-7b-lora"],
-        "Real": ["/workspace/S-LoRA/LLM-models/LLaMA-2-7b/Adapters/tloen/alpaca-lora-7b", 
-                "/workspace/S-LoRA/LLM-models/LLaMA-2-7b/Adapters/MBZUAI/bactrian-x-llama-7b-lora"],
-        "debug": ["/workspace/S-LoRA/LLM-models/LLaMA-2-7b/Adapters/tloen/alpaca-lora-7b", 
-                "/workspace/S-LoRA/LLM-models/LLaMA-2-7b/Adapters/MBZUAI/bactrian-x-llama-7b-lora"],
-        "debug-13b": ["/workspace/S-LoRA/LLM-models/LLaMA-2-13b/Adapters/ausboss/llama2-13b-supercot-loras2", 
-                "/workspace/S-LoRA/LLM-models/LLaMA-2-13b/Adapters/IlyaGusev/llama_13b_ru_turbo_alpaca_lora"],
+        "Real": ["/home/hadoop-hdp/codes/LLM-models/LLaMA-2-7b/Adapters/tloen/alpaca-lora-7b", 
+                "/home/hadoop-hdp/codes/LLM-models/LLaMA-2-7b/Adapters/MBZUAI/bactrian-x-llama-7b-lora"],
+        "debug": ["/home/hadoop-hdp/codes/LLM-models/LLaMA-2-7b/Adapters/tloen/alpaca-lora-7b", 
+                "/home/hadoop-hdp/codes/LLM-models/LLaMA-2-7b/Adapters/MBZUAI/bactrian-x-llama-7b-lora"],
+        "debug-13b": ["/home/hadoop-hdp/codes/LLM-models/LLaMA-2-13b/Adapters/ausboss/llama2-13b-supercot-loras2", 
+                    "/home/hadoop-hdp/codes/LLM-models/LLaMA-2-13b/Adapters/davidkim205/komt-Llama-2-13b-hf-lora",
+                    "/home/hadoop-hdp/codes/LLM-models/LLaMA-2-13b/Adapters/xz-huggingface-0/llama2-13b-sft-lora-20231205-32",
+                ],
 }
 
 BenchmarkConfig = namedtuple(
@@ -571,7 +572,7 @@ debug_suite = {
 
 experiment_suite = {
     "4090-num-adapter": BenchmarkConfig(
-        num_adapters = [1, 20, 50, 100, 200],
+        num_adapters = [1, 20, 50, 100],
         alpha = [1],
         req_rate = [5],
         cv = [1],
@@ -601,6 +602,61 @@ experiment_suite = {
         input_range = [[8, 512]],
         output_range = [[8, 512]],
         max_new_token = [64, 128, 256, 512],
+    ),
+
+    "a100-num-adapter": BenchmarkConfig(
+        num_adapters = [1, 20, 50, 100],
+        alpha = [1],
+        req_rate = [20],
+        cv = [1],
+        duration = [30],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+        max_new_token = [256],
+    ),
+
+    "a100-req-rate": BenchmarkConfig(
+        num_adapters = [20],
+        alpha = [1],
+        req_rate = [4, 8, 12, 16, 20, 22, 24],
+        cv = [1],
+        duration = [30],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+        max_new_token = [256],
+    ),
+
+    "a100-max-new-token": BenchmarkConfig(
+        num_adapters = [20],
+        alpha = [1],
+        req_rate = [20],
+        cv = [1],
+        duration = [30],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+        max_new_token = [64, 128, 256, 512],
+    ),
+
+    "a100-overhead": BenchmarkConfig(
+        num_adapters = [20],
+        alpha = [1],
+        req_rate = [20],
+        cv = [1],
+        duration = [30],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+        max_new_token = [256],
+    ),
+
+    "a100-discover-problem": BenchmarkConfig(
+        num_adapters = [20],
+        alpha = [1],
+        req_rate = [20],
+        cv = [1],
+        duration = [30],
+        input_range = [[8, 512]],
+        output_range = [[8, 512]],
+        max_new_token = [256],
     ),
 
 }

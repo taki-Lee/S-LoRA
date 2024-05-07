@@ -6,7 +6,6 @@ from slora.utils.infer_utils import nvtx_decorator
 
 
 @triton.jit
-@nvtx_decorator('_fwd_kernel_token_att2')
 def _fwd_kernel_token_att2(
     Prob, V, Out, B_Loc, B_Start_Loc, B_Seqlen, max_input_len,  # B_Start_Loc 保存的是如果连续存储时候的累加输入和
     stride_b_loc_b, stride_b_loc_s,
@@ -72,7 +71,6 @@ def token_att_fwd2(prob, v, out, B_Loc, B_Start_Loc, B_Seqlen, max_input_len):
 
 
 @triton.jit
-@nvtx_decorator('_fwd_kernel_token_att2_int8v')
 def _fwd_kernel_token_att2_int8v(
     Prob, V, V_scale, Out, B_Loc, B_Start_Loc, B_Seqlen, max_input_len,  # B_Start_Loc 保存的是如果连续存储时候的累加输入和
     stride_b_loc_b, stride_b_loc_s,

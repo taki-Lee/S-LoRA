@@ -40,12 +40,12 @@ class ReqQueue:
     # @calculate_time(show=True, min_cost_ms=0.1)
     def _can_add_new_req(self, req, lora_ranks):
         # TODO: add check accoding to min(max_new_token, predict_output_len) to support FCFS-pre, slora-pre
-        # self.cache_len_list.append((req.input_len + 1, req.max_output_len - 1)) # hard to analysis
         # self.cache_len_list.append((req.input_len + 1, req.max_new_token - 1)) # hard to analysis
         if use_predictor():
             self.cache_len_list.append((req.input_len + 1, req.predict_output_len - 1))
         else:
-            self.cache_len_list.append((req.input_len + 1, req.max_new_token - 1)) # hard to analysis
+            self.cache_len_list.append((req.input_len + 1, req.max_new_token - 1)) # malloc memory use man_new_token
+            # self.cache_len_list.append((req.input_len + 1, min(req.max_output_len, req.max_new_token) - 1)) # malloc memory use max_output_len
 
         self.cache_len_list.sort(key=lambda x: -x[1])
         if req.adapter_dir not in self.adapters:

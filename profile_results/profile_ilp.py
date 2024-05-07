@@ -99,6 +99,7 @@ def analyze_server(log_path):
     
     token_rate = []
     batch_size = []
+    can_use_mem = []
     for line in lines:
         if line.startswith('counter_count:'):
             tmp = line.split(' ')
@@ -106,17 +107,21 @@ def analyze_server(log_path):
             try:
                 token_rate.append(float(tmp[6]))
                 batch_size.append(int(tmp[4]))
+                can_use_mem.append(int(tmp[-1]))
             except:
                 continue
     token_rate.sort()
-    print(token_rate)
+    # print(token_rate)
+    print("=======================")
     print("max token_rate: ", np.max(token_rate))
     print("avg token_rate: ", np.average(token_rate))
     print("max batch_size: ", np.max(batch_size))
     print("avg batch_size: ", np.average(batch_size))
+    print("min can_use_mem: ", np.min(can_use_mem))
+    print("=======================")
     return batch_size, token_rate
 
-def main():
+def main(save_dir):
     
     results_paths = [
         # './results.json',
@@ -136,7 +141,7 @@ def main():
     #     '/workspace/S-LoRA/cpp/logs/0326/total/real_server_tp_1_cluster_None_pre_1.log',
     # ]
     
-    save_dir = '/workspace/S-LoRA/benchmarks/logs/schedule_strategy_dur_20_no_filter'
+    # save_dir = '/home/hadoop-hdp/codes/S-LoRA/benchmarks/logs/ILP_effectiveness'
     server_paths = [os.path.join(save_dir, f_name) for f_name in os.listdir(save_dir) if f_name.startswith("real_server_")]
 
 
@@ -162,5 +167,16 @@ def main():
     draw_CDFs(token_used_ratios, os.path.join(save_dir, 'CDF_token_used_ratio.png'), 'Utilization of KV Cache', names)
 
 
+# save_dir = '/home/hadoop-hdp/codes/S-LoRA/benchmarks/logs/ILP_effectiveness'
+# main(save_dir)
+# save_dir = '/home/hadoop-hdp/codes/S-LoRA/benchmarks/logs/max_new_token'
+# main(save_dir)
+# save_dir = '/home/hadoop-hdp/codes/S-LoRA/benchmarks/logs/num_adapters'
+# main(save_dir)
+# save_dir = '/home/hadoop-hdp/codes/S-LoRA/benchmarks/logs/req_rate'
+# main(save_dir)
 
-main()
+
+save_dir = '/home/hadoop-hdp/codes/S-LoRA/benchmarks/logs/test'
+main(save_dir)
+

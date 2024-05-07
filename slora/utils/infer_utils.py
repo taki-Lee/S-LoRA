@@ -14,10 +14,6 @@ is_show_cost_time = False
 TORCH_STREAMS = [
     torch.cuda.Stream(),
     torch.cuda.Stream(),
-    torch.cuda.Stream(),
-    torch.cuda.Stream(),
-    torch.cuda.Stream(),
-    torch.cuda.Stream(),
 ]
 
 def mark_cost_time(func_name):

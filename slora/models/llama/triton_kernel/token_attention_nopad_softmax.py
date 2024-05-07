@@ -6,7 +6,6 @@ from slora.utils.infer_utils import nvtx_decorator
 
 
 @triton.jit
-@nvtx_decorator('_fwd_kernel_token_softmax')
 def _fwd_kernel_token_softmax(
     Logics, B_Start_Loc, B_Seqlen,
     Prob_Out,

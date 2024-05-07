@@ -6,7 +6,6 @@ from slora.utils.infer_utils import nvtx_decorator
 
 
 @triton.jit
-@nvtx_decorator('_rotary_kernel')
 def _rotary_kernel(
     Q, Cos, Sin,
     stride_qbs, stride_qh, stride_qd,

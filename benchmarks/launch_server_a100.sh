@@ -4,7 +4,7 @@
 tensor_parallel="0"
 
 nsys_profile="0"
-model_setting="Real"
+model_setting="debug-13b"
 use_stream='0'
 
 
@@ -149,12 +149,21 @@ test_schedule_strategy()
     esac
 }
 
-# strategy must in ["FCFS", "slora", "FCFS_predictor", "slora_predictor", "ILP_predictor",]
-# strategy="FCFS"
+# strategy must in ["FCFS", "LCFS", "slora", "FCFS_predictor", "LCFS_predictor", "slora_predictor", "ILP_predictor",]
+# strategy="FCFS_predictor"
+# strategy="slora_predictor"
+# strategy="ILP_predictor"
 # logs_dir="logs/ILP_effectiveness"
 # test_schedule_strategy $strategy $logs_dir
 
-strategy="FCFS_predictor"
-# logs_dir="logs/ILP_effectiveness"
+# strategy="FCFS"
+# strategy="slora"
+# strategy="ILP_predictor"
+# logs_dir="logs/req_rate"
+# test_schedule_strategy $strategy $logs_dir
+
+# strategy="FCFS"
+# strategy="slora"
+strategy="ILP_predictor"
 logs_dir="logs/test"
 test_schedule_strategy $strategy $logs_dir

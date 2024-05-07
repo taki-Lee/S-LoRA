@@ -5,7 +5,6 @@ import triton.language as tl
 from slora.utils.infer_utils import nvtx_decorator
 
 @triton.jit
-@nvtx_decorator('_rms_norm_fwd_fused')
 def _rms_norm_fwd_fused(
     X,  # pointer to the input
     Y,  # pointer to the output

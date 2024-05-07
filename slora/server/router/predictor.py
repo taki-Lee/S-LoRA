@@ -1,7 +1,7 @@
 import transformers
 import torch
 import numpy as np
-from slora.utils.infer_utils import calculate_time
+from slora.utils.infer_utils import calculate_time, use_stream, TORCH_STREAMS, stream_wrapper
 
 
 IGNORE_INDEX = -100
@@ -22,6 +22,7 @@ class Predictor:
         self.wrong = 0
         self.truth_buckets = [0]*BUCKET_NUM
         self.predict_buckets = [0]*BUCKET_NUM
+        self.stream = TORCH_STREAMS[0]
 
     def load_predictor(self, model_dir):
         num_labels = BUCKET_NUM
@@ -42,11 +43,12 @@ class Predictor:
 
     # @calculate_time(show=True, min_cost_ms=0.01)
     def predict(self, input_ids, output_len):
-        with torch.no_grad():
-            i = torch.tensor(input_ids, device=self.device)
-            output_ids = self.model(i.unsqueeze(0)).logits
-            pre_label = np.argmax(output_ids.detach().cpu().numpy())
-            tru_label = output_len//PER_BUCKET_LENGTH
+        with torch.cuda.stream(self.stream):
+            with torch.no_grad():
+                i = torch.tensor(input_ids, device=self.device)
+                output_ids = self.model(i.unsqueeze(0)).logits
+        pre_label = np.argmax(output_ids.detach().cpu().numpy())
+        tru_label = output_len//PER_BUCKET_LENGTH
         self.truth_buckets[tru_label] += 1
         self.predict_buckets[pre_label] += 1
         if tru_label == pre_label:

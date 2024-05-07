@@ -39,14 +39,19 @@ PROMPT_DICT = {
 }
 
 ADAPTER_DIRS = [
-    '/workspace/S-LoRA/LLM-models/LLaMA-2-7b/Adapters/tloen/alpaca-lora-7b', 
-    '/workspace/S-LoRA/LLM-models/LLaMA-2-7b/Adapters/MBZUAI/bactrian-x-llama-7b-lora',
+    # llama-2-7b
+    # '/home/hadoop-hdp/codes/S-LoRA/LLM-models/LLaMA-2-7b/Adapters/tloen/alpaca-lora-7b', 
+    # '/home/hadoop-hdp/codes/S-LoRA/LLM-models/LLaMA-2-7b/Adapters/MBZUAI/bactrian-x-llama-7b-lora',
+    # llama-2-13b
+    "/home/hadoop-hdp/codes/LLM-models/LLaMA-2-13b/Adapters/ausboss/llama2-13b-supercot-loras2", 
+    "/home/hadoop-hdp/codes/LLM-models/LLaMA-2-13b/Adapters/davidkim205/komt-Llama-2-13b-hf-lora",
+    "/home/hadoop-hdp/codes/LLM-models/LLaMA-2-13b/Adapters/xz-huggingface-0/llama2-13b-sft-lora-20231205-32",
     ]
 
 def main():
-    data_path = '/workspace/distill-bert/lora-inference/my_datasets/extended_mixed_dataset.json'
-    # data_path = '/workspace/distill-bert/lora-inference/my_datasets/mixed_dataset.json'
-    generate_data_path = './my_traces.json'
+    # data_path = '/home/hadoop-hdp/codes/lora-inference/my_datasets/extended_mixed_dataset.json'
+    data_path = '/home/hadoop-hdp/codes/lora-inference/inference_results/alpaca-llama-2-13b/mixed_dataset_all.json'
+    generate_data_path = './my_traces_llama_2_13b.json'
     
     with open(data_path, 'r') as f:
         datas = json.load(f)
